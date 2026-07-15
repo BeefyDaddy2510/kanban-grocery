@@ -70,6 +70,25 @@ docker build -t kanban-grocery .
 docker run --rm -p 8080:8080 -v kanban-grocery-config:/config kanban-grocery
 ```
 
+## Home Assistant App
+
+Grocy Homie lze nainstalovat jako vlastní Home Assistant App na instalacích Home Assistant OS a Home Assistant Supervised.
+
+1. V Home Assistantu otevřete **Nastavení → Apps → App store**.
+2. V menu se třemi tečkami zvolte **Repositories**.
+3. Přidejte adresu:
+
+   ```text
+   https://github.com/BeefyDaddy2510/kanban-grocery
+   ```
+
+4. Vyberte **Grocy Homie**, aplikaci nainstalujte a spusťte.
+5. Zapněte **Zobrazit v postranním panelu**.
+
+Home Assistant varianta používá zabezpečený Ingress, takže nepotřebuje samostatně zveřejněný port. Podporované architektury jsou `amd64` a `aarch64`.
+
+> Aktuální verze ukládá data do konkrétního prohlížeče. Instalace jako Home Assistant App zatím sama o sobě nezajišťuje synchronizaci dat mezi telefonem a počítačem.
+
 ## Důležité zdroje
 
 Doby mražení vycházejí z tabulek [USDA Food Safety and Inspection Service](https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/freezing-and-food-safety). Uvedené doby jsou doporučení pro kvalitu při souvislém skladování při −18 °C, nikoliv automatické datum zdravotní závadnosti.

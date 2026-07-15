@@ -1,0 +1,30 @@
+name: Validate Home Assistant App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - home-assistant-addon/**
+      - repository.yaml
+      - .github/workflows/home-assistant.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - home-assistant-addon/**
+      - repository.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint Grocy Homie
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7.0.0
+
+      - name: Run Home Assistant App Lint
+        uses: frenck/action-addon-linter@v2.21
+        with:
+          path: ./home-assistant-addon

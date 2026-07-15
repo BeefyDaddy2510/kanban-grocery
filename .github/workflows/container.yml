@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.0
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -31,6 +31,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract image metadata
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -38,9 +39,9 @@ jobs:
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha,prefix=sha-
-            type=ref,event=tag
 
       - name: Build and publish
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -50,3 +51,25 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Extract Home Assistant image metadata
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        id: ha-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/beefydaddy2510/kanban-grocery
+          tags: |
+            type=semver,pattern={{version}}
+
+      - name: Build and publish Home Assistant App
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: home-assistant-addon/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.ha-meta.outputs.tags }}
+          labels: ${{ steps.ha-meta.outputs.labels }}
+          cache-from: type=gha,scope=home-assistant
+          cache-to: type=gha,mode=max,scope=home-assistant
