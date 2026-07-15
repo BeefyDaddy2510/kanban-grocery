@@ -7,8 +7,11 @@ export interface SiteSettings {
   householdName: string
   theme: ThemeMode
   accent: AccentColor
+  customAccent: string
   defaultCurrency: Currency
-  defaultLocation: PantryItem['location']
+  categories: string[]
+  locations: string[]
+  defaultLocation: string
   defaultCategory: string
   defaultUnit: Unit
   defaultQuantity: number
@@ -19,7 +22,7 @@ export interface PantryItem {
   id: string
   name: string
   category: string
-  location: 'Spíž' | 'Lednice' | 'Koupelna' | 'Drogerie'
+  location: string
   quantity: number
   minimum: number
   unit: Unit

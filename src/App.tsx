@@ -3,20 +3,21 @@ import type { IScannerControls } from '@zxing/browser'
 import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
-  ListChecks, Menu, Minus, Moon, Package, Plus, ScanLine, Search, ShoppingBasket,
+  ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, ScanLine, Search, ShoppingBasket,
   Settings, Snowflake, Sparkles, Sun, Trash2, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
-import type { AccentColor, AppData, Currency, FreezerItem, PantryItem, ShoppingItem, SiteSettings, Todo, Unit } from './types'
+import type { AccentColor, AppData, Currency, FreezerItem, PantryItem, Recipe, ShoppingItem, SiteSettings, Todo, Unit } from './types'
 
 type Page = 'Přehled' | 'Zásoby' | 'Mrazák' | 'Nákupy' | 'Recepty' | 'Úkoly' | 'Nastavení'
-type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | null
+type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
 
 const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const defaultSettings: SiteSettings = {
-  householdName: 'Domácnost Novákových', theme: 'system', accent: 'coral', defaultCurrency: 'CZK',
-  defaultLocation: 'Spíž', defaultCategory: 'Ostatní', defaultUnit: 'ks', defaultQuantity: 1, defaultMinimum: 1,
+  householdName: 'Domácnost Novákových', theme: 'system', accent: 'coral', customAccent: '', defaultCurrency: 'CZK',
+  categories: ['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', 'Ostatní'],
+  locations: ['Spíž', 'Lednice', 'Koupelna', 'Drogerie'], defaultLocation: 'Spíž', defaultCategory: 'Ostatní', defaultUnit: 'ks', defaultQuantity: 1, defaultMinimum: 1,
 }
 const accentColors: Record<AccentColor, { label: string; value: string; dark: string }> = {
   coral: { label: 'Korálová', value: '#e9694b', dark: '#c9543b' },
@@ -62,7 +63,10 @@ function App() {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || '') as AppData } catch { return initialData }
   })
   const [settings, setSettings] = useState<SiteSettings>(() => {
-    try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '') } as SiteSettings }
+    try {
+      const saved = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '') as Partial<SiteSettings>
+      return { ...defaultSettings, ...saved, categories: saved.categories?.length ? saved.categories : defaultSettings.categories, locations: saved.locations?.length ? saved.locations : defaultSettings.locations }
+    }
     catch { return { ...defaultSettings, theme: localStorage.getItem('domovka-theme') === 'dark' ? 'dark' : 'system' } }
   })
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -71,6 +75,7 @@ function App() {
   const [rate, setRate] = useState(24.284)
   const [rateDate, setRateDate] = useState('14. 7. 2026')
   const [modal, setModal] = useState<ModalKind>(null)
+  const [editingPantry, setEditingPantry] = useState<PantryItem | null>(null)
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -79,8 +84,8 @@ function App() {
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     const accent = accentColors[settings.accent]
-    document.documentElement.style.setProperty('--brand', accent.value)
-    document.documentElement.style.setProperty('--brand-dark', accent.dark)
+    document.documentElement.style.setProperty('--brand', settings.customAccent || accent.value)
+    document.documentElement.style.setProperty('--brand-dark', settings.customAccent || accent.dark)
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }, [dark, settings])
   useEffect(() => {
@@ -119,13 +124,14 @@ function App() {
   const toggleTodo = (id: string) => setData(prev => ({ ...prev, todos: prev.todos.map(t => t.id === id ? { ...t, done: !t.done } : t) }))
   const notify = (text: string) => setToast(text)
   const go = (target: Page) => { setPage(target); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
+  const closeModal = () => { setModal(null); setEditingPantry(null) }
 
   const pageContent: Record<Page, ReactNode> = {
     'Přehled': <Dashboard data={data} lowItems={lowItems} expiringItems={expiringItems} freezerWarnings={freezerWarnings} pendingShopping={pendingShopping} inventoryValue={inventoryValue} money={money} go={go} updatePantry={updatePantry} toggleTodo={toggleTodo} />,
-    'Zásoby': <Pantry data={data} money={money} update={updatePantry} remove={removePantry} open={() => setModal('pantry')} />,
+    'Zásoby': <Pantry data={data} money={money} update={updatePantry} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     'Mrazák': <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
     'Nákupy': <Shopping data={data} setData={setData} money={money} open={setModal} notify={notify} />,
-    'Recepty': <Recipes data={data} setData={setData} notify={notify} go={go} />,
+    'Recepty': <Recipes data={data} setData={setData} notify={notify} go={go} open={() => setModal('recipe')} />,
     'Úkoly': <Todos data={data} setData={setData} toggle={toggleTodo} open={() => setModal('todo')} />,
     'Nastavení': <SettingsPage settings={settings} setSettings={setSettings} setCurrency={setCurrency} notify={notify} />,
   }
@@ -144,7 +150,7 @@ function App() {
       <div className="page-content">{pageContent[page]}</div>
       <footer>Grocy Homie · kurz ECB z {rateDate} · data jsou uložená v tomto prohlížeči</footer>
     </main>
-    {modal && <Modal kind={modal} close={() => setModal(null)} data={data} setData={setData} notify={notify} settings={settings} />}
+    {modal && <Modal kind={modal} close={closeModal} data={data} setData={setData} notify={notify} settings={settings} editingPantry={editingPantry} />}
     {searchOpen && <GlobalSearch data={data} close={() => setSearchOpen(false)} go={target => { setSearchOpen(false); go(target) }} />}
     {toast && <div className="toast"><CheckCircle2 size={19} />{toast}</div>}
   </div>
@@ -173,10 +179,17 @@ function SettingsPage({ settings, setSettings, setCurrency, notify }: { settings
   return <><PageIntro title="Nastavení Grocy Homie" subtitle="Přizpůsobte vzhled domácnosti a předvyplněné hodnoty nových položek." button="Obnovit výchozí" icon={<Settings />} onClick={reset} />
     <div className="settings-grid">
       <section className="settings-card"><div className="settings-card-head"><Settings size={20} /><div><h3>Domácnost</h3><p>Název se zobrazí v záhlaví na všech zařízeních.</p></div></div><Field label="Název domácnosti"><input value={settings.householdName} onChange={event => update('householdName', event.target.value)} placeholder="např. U Nováků" /></Field><Field label="Výchozí měna"><select value={settings.defaultCurrency} onChange={event => { const value = event.target.value as Currency; update('defaultCurrency', value); setCurrency(value) }}><option value="CZK">CZK — česká koruna</option><option value="EUR">EUR — euro</option></select></Field></section>
-      <section className="settings-card"><div className="settings-card-head"><Sun size={20} /><div><h3>Vzhled</h3><p>Režim a hlavní barva ovládacích prvků.</p></div></div><span className="setting-label">Barevný režim</span><div className="theme-options">{([['system','Podle zařízení'],['light','Světlý'],['dark','Tmavý']] as const).map(([value, label]) => <button key={value} className={settings.theme === value ? 'active' : ''} onClick={() => update('theme', value)}>{value === 'dark' ? <Moon size={17} /> : value === 'light' ? <Sun size={17} /> : <Settings size={17} />}{label}</button>)}</div><span className="setting-label">Akcentní barva</span><div className="accent-options">{(Object.entries(accentColors) as [AccentColor, typeof accentColors[AccentColor]][]).map(([key, color]) => <button key={key} className={settings.accent === key ? 'active' : ''} onClick={() => update('accent', key)}><i style={{ background: color.value }} />{color.label}{settings.accent === key && <Check size={14} />}</button>)}</div></section>
-      <section className="settings-card span-2"><div className="settings-card-head"><Package size={20} /><div><h3>Výchozí hodnoty zásob</h3><p>Automaticky se předvyplní při každém přidání nové položky.</p></div></div><div className="settings-defaults"><Field label="Kategorie"><input value={settings.defaultCategory} onChange={event => update('defaultCategory', event.target.value)} placeholder="Ostatní" /></Field><Field label="Umístění"><select value={settings.defaultLocation} onChange={event => update('defaultLocation', event.target.value as PantryItem['location'])}><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Jednotka"><select value={settings.defaultUnit} onChange={event => update('defaultUnit', event.target.value as Unit)}>{units.map(unit => <option key={unit}>{unit}</option>)}</select></Field><Field label="Množství"><input type="number" min="0" step="0.1" value={settings.defaultQuantity} onChange={event => update('defaultQuantity', Number(event.target.value))} /></Field><Field label="Kanban minimum"><input type="number" min="0" step="0.1" value={settings.defaultMinimum} onChange={event => update('defaultMinimum', Number(event.target.value))} /></Field></div><div className="settings-note"><CheckCircle2 size={17} />Změny se ukládají automaticky v tomto prohlížeči.</div></section>
+      <section className="settings-card"><div className="settings-card-head"><Sun size={20} /><div><h3>Vzhled</h3><p>Režim a hlavní barva ovládacích prvků.</p></div></div><span className="setting-label">Barevný režim</span><div className="theme-options">{([['system','Podle zařízení'],['light','Světlý'],['dark','Tmavý']] as const).map(([value, label]) => <button key={value} className={settings.theme === value ? 'active' : ''} onClick={() => update('theme', value)}>{value === 'dark' ? <Moon size={17} /> : value === 'light' ? <Sun size={17} /> : <Settings size={17} />}{label}</button>)}</div><span className="setting-label">Akcentní barva</span><div className="accent-options">{(Object.entries(accentColors) as [AccentColor, typeof accentColors[AccentColor]][]).map(([key, color]) => <button key={key} className={settings.accent === key && !settings.customAccent ? 'active' : ''} onClick={() => { update('accent', key); update('customAccent', '') }}><i style={{ background: color.value }} />{color.label}{settings.accent === key && !settings.customAccent && <Check size={14} />}</button>)}<label className={`color-picker ${settings.customAccent ? 'active' : ''}`}><input type="color" value={settings.customAccent || accentColors[settings.accent].value} onChange={event => update('customAccent', event.target.value)} /><i style={{ background: settings.customAccent || accentColors[settings.accent].value }} />Vlastní barva{settings.customAccent && <Check size={14} />}</label></div></section>
+      <section className="settings-card span-2"><div className="settings-card-head"><Package size={20} /><div><h3>Výchozí hodnoty zásob</h3><p>Automaticky se předvyplní při každém přidání nové položky.</p></div></div><div className="settings-defaults"><Field label="Kategorie"><select value={settings.defaultCategory} onChange={event => update('defaultCategory', event.target.value)}>{settings.categories.map(category => <option key={category}>{category}</option>)}</select></Field><Field label="Umístění"><select value={settings.defaultLocation} onChange={event => update('defaultLocation', event.target.value)}>{settings.locations.map(location => <option key={location}>{location}</option>)}</select></Field><Field label="Jednotka"><select value={settings.defaultUnit} onChange={event => update('defaultUnit', event.target.value as Unit)}>{units.map(unit => <option key={unit}>{unit}</option>)}</select></Field><Field label="Množství"><input type="number" min="0" step="0.1" value={settings.defaultQuantity} onChange={event => update('defaultQuantity', Number(event.target.value))} /></Field><Field label="Kanban minimum"><input type="number" min="0" step="0.1" value={settings.defaultMinimum} onChange={event => update('defaultMinimum', Number(event.target.value))} /></Field></div><div className="settings-note"><CheckCircle2 size={17} />Změny se ukládají automaticky v tomto prohlížeči.</div></section>
+      <section className="settings-card span-2"><div className="settings-card-head"><Pencil size={20} /><div><h3>Kategorie a umístění</h3><p>Přidejte vlastní hodnoty nebo odeberte ty, které už nepoužíváte.</p></div></div><div className="editable-lists"><EditableList title="Kategorie" values={settings.categories} placeholder="Nová kategorie" onChange={values => { update('categories', values); if (!values.includes(settings.defaultCategory)) update('defaultCategory', values[0] ?? '') }} /><EditableList title="Umístění" values={settings.locations} placeholder="Nové umístění" onChange={values => { update('locations', values); if (!values.includes(settings.defaultLocation)) update('defaultLocation', values[0] ?? '') }} /></div></section>
     </div>
   </>
+}
+
+function EditableList({ title, values, placeholder, onChange }: { title: string; values: string[]; placeholder: string; onChange: (values: string[]) => void }) {
+  const [value, setValue] = useState('')
+  const add = () => { const clean = value.trim(); if (!clean || values.some(item => item.toLocaleLowerCase('cs') === clean.toLocaleLowerCase('cs'))) return; onChange([...values, clean]); setValue('') }
+  return <div className="editable-list"><strong>{title}</strong><div className="editable-tags">{values.map(item => <span key={item}>{item}<button onClick={() => onChange(values.filter(value => value !== item))} aria-label={`Odebrat ${item}`}><X size={12} /></button></span>)}</div><div className="editable-add"><input value={value} onChange={event => setValue(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add() } }} placeholder={placeholder} /><button className="secondary" onClick={add}><Plus size={15} />Přidat</button></div></div>
 }
 
 function Dashboard({ data, lowItems, expiringItems, freezerWarnings, pendingShopping, inventoryValue, money, go, updatePantry, toggleTodo }: {
@@ -210,7 +223,7 @@ function Dashboard({ data, lowItems, expiringItems, freezerWarnings, pendingShop
   </>
 }
 
-function Pantry({ data, money, update, remove, open }: { data: AppData; money: (n: number) => string; update: (id: string, d: number) => void; remove: (id: string) => void; open: () => void }) {
+function Pantry({ data, money, update, remove, open, edit }: { data: AppData; money: (n: number) => string; update: (id: string, d: number) => void; remove: (id: string) => void; open: () => void; edit: (item: PantryItem) => void }) {
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('Vše')
   const locations = ['Vše', 'Spíž', 'Lednice', 'Koupelna', 'Drogerie']
@@ -221,7 +234,7 @@ function Pantry({ data, money, update, remove, open }: { data: AppData; money: (
     <div className="inventory-grid">{items.map(item => {
       const low = item.quantity < item.minimum
       const expiryDays = item.expiresAt ? daysBetween(today(), item.expiresAt) : null
-      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} image={item.image} large /><div className="card-badges">{low && <span className="badge danger">Doplnit</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? 'Po datu' : `${expiryDays} dny`}</span>}</div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>Kanban minimum</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className="card-meta"><span>{money(item.priceCzk)} / {item.unit}</span><span>{item.expiresAt ? `do ${formatDate(item.expiresAt)}` : 'bez expirace'}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label="Smazat"><Trash2 size={16} /></button></article>
+      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} image={item.image} large /><div className="card-badges">{low && <span className="badge danger">Doplnit</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? 'Po datu' : `${expiryDays} dny`}</span>}<button className="edit-button" onClick={() => edit(item)} aria-label={`Upravit ${item.name}`}><Pencil size={15} /></button></div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>Kanban minimum</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className="card-meta"><span>{money(item.priceCzk)} / {item.unit}</span><span>{item.expiresAt ? `do ${formatDate(item.expiresAt)}` : 'bez expirace'}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label="Smazat"><Trash2 size={16} /></button></article>
     })}</div>{!items.length && <Empty text="Žádná položka neodpovídá filtru." />}
   </>
 }
@@ -277,7 +290,7 @@ function ArchivedLists({ lists, restore }: { lists: AppData['shoppingLists']; re
   return <section className="archived-lists"><div><Archive size={19} /><span><strong>Archivované seznamy</strong><small>Uchované pro pozdější použití</small></span></div>{lists.map(list => <article key={list.id}><i style={{ background: list.color }} /><span className="grow"><strong>{list.name}</strong><small>{list.type} · {list.items.length} položek</small></span><button className="secondary" onClick={() => restore(list.id)}>Obnovit</button></article>)}</section>
 }
 
-function Recipes({ data, setData, notify, go }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; go: (p: Page) => void }) {
+function Recipes({ data, setData, notify, go, open }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; go: (p: Page) => void; open: () => void }) {
   const [query, setQuery] = useState('')
   const recipes = data.recipes.filter(r => r.name.toLowerCase().includes(query.toLowerCase()))
   const addIngredients = (id: string) => {
@@ -286,7 +299,7 @@ function Recipes({ data, setData, notify, go }: { data: AppData; setData: React.
     setData(p => ({ ...p, shoppingLists: p.shoppingLists.map((l, n) => n === 0 ? { ...l, items: [...l.items, ...items] } : l) }))
     notify(`Ingredience pro „${recipe.name}“ přidány na nákup`); go('Nákupy')
   }
-  return <><PageIntro title="Co dnes uvaříme?" subtitle="Oblíbené recepty propojené s nákupem a domácími zásobami." button="Nový recept" icon={<Plus />} onClick={() => notify('Editor receptu připravujeme do další verze')} />
+  return <><PageIntro title="Co dnes uvaříme?" subtitle="Oblíbené recepty propojené s nákupem a domácími zásobami." button="Nový recept" icon={<Plus />} onClick={open} />
     <label className="input-search wide"><Search size={18} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Hledat recept nebo ingredienci…" /></label>
     <div className="recipe-grid">{recipes.map(recipe => <article className="recipe-card" key={recipe.id}><div className="recipe-cover"><span>{recipe.emoji}</span><button className={recipe.favorite ? 'favorite' : ''} onClick={() => setData(p => ({ ...p, recipes: p.recipes.map(r => r.id === recipe.id ? { ...r, favorite: !r.favorite } : r) }))}>♥</button></div><div className="recipe-body"><div className="tag-row">{recipe.tags.map(t => <span key={t}>{t}</span>)}</div><h3>{recipe.name}</h3><p><Clock3 size={15} />{recipe.minutes} min <span>·</span> {recipe.servings} porce</p><div className="ingredients-preview">{recipe.ingredients.slice(0, 3).map(i => <span key={i.name}>{i.name} <b>{i.amount}</b></span>)}</div><button className="secondary full" onClick={() => addIngredients(recipe.id)}><ShoppingBasket size={17} />Přidat ingredience na nákup</button></div></article>)}</div>
   </>
@@ -305,22 +318,24 @@ function Todos({ data, setData, toggle, open }: { data: AppData; setData: React.
   </>
 }
 
-function Modal({ kind, close, data, setData, notify, settings }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; settings: SiteSettings }) {
+function Modal({ kind, close, data, setData, notify, settings, editingPantry }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; settings: SiteSettings; editingPantry: PantryItem | null }) {
   const [scannerOpen, setScannerOpen] = useState(false)
-  const [barcode, setBarcode] = useState('')
-  const [image, setImage] = useState<string>()
+  const [barcode, setBarcode] = useState(editingPantry?.barcode ?? '')
+  const [image, setImage] = useState<string | undefined>(editingPantry?.image?.startsWith('http') ? undefined : editingPantry?.image)
+  const [imageUrl, setImageUrl] = useState(editingPantry?.image?.startsWith('http') ? editingPantry.image : '')
   const [imageError, setImageError] = useState('')
-  const categories = [...new Set(['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', ...data.pantry.map(i => i.category)])].sort((a, b) => a.localeCompare(b, 'cs'))
+  const categories = [...new Set([...settings.categories, ...data.pantry.map(i => i.category)])].sort((a, b) => a.localeCompare(b, 'cs'))
+  const locations = [...new Set([...settings.locations, ...data.pantry.map(i => i.location)])].sort((a, b) => a.localeCompare(b, 'cs'))
   const chooseImage = async (file?: File) => {
     if (!file) return
     setImageError('')
-    try { setImage(await prepareThumbnail(file)) } catch (error) { setImageError(error instanceof Error ? error.message : 'Fotografii se nepodařilo načíst.') }
+    try { setImage(await prepareThumbnail(file)); setImageUrl('') } catch (error) { setImageError(error instanceof Error ? error.message : 'Fotografii se nepodařilo načíst.') }
   }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const f = new FormData(e.currentTarget)
     if (kind === 'pantry') {
-      const item: PantryItem = { id: uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')) as PantryItem['location'], quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image }
-      setData(p => ({ ...p, pantry: [item, ...p.pantry] })); notify('Položka přidána do zásob')
+      const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image }
+      setData(p => ({ ...p, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? 'Položka byla upravena' : 'Položka přidána do zásob')
     } else if (kind === 'freezer') {
       const category = String(f.get('category')); const guide = freezerGuide.find(g => g.category === category)
       const item: FreezerItem = { id: uid(), name: String(f.get('name')), category, quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, frozenAt: String(f.get('frozenAt')), recommendedMonths: guide?.max ?? Number(f.get('months')) ?? 6, note: String(f.get('note')) || undefined }
@@ -331,17 +346,23 @@ function Modal({ kind, close, data, setData, notify, settings }: { kind: Exclude
     } else if (kind === 'todo') {
       const task: Todo = { id: uid(), title: String(f.get('title')), date: String(f.get('date')), done: false, category: String(f.get('category')) as Todo['category'] }
       setData(p => ({ ...p, todos: [...p.todos, task] })); notify('Úkol přidán')
+    } else if (kind === 'recipe') {
+      const ingredients = String(f.get('ingredients')).split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, ...amount] = line.split('|'); return { name: name.trim(), amount: amount.join('|').trim() || 'dle chuti' } })
+      const recipe: Recipe = { id: uid(), name: String(f.get('name')), emoji: String(f.get('emoji') || '🍽️'), minutes: Number(f.get('minutes')) || 30, servings: Number(f.get('servings')) || 4, tags: String(f.get('tags')).split(',').map(tag => tag.trim()).filter(Boolean), ingredients, instructions: String(f.get('instructions')), favorite: false }
+      setData(p => ({ ...p, recipes: [recipe, ...p.recipes] })); notify('Recept byl přidán')
     }
     close()
   }
-  const titles = { pantry: 'Přidat do zásob', freezer: 'Přidat do mrazáku', shopping: 'Přidat na nákup', todo: 'Nový úkol', scanner: 'Skenovat kód' }
+  const imageSource = imageUrl.trim() || image
+  const titles = { pantry: editingPantry ? 'Upravit položku' : 'Přidat do zásob', freezer: 'Přidat do mrazáku', shopping: 'Přidat na nákup', todo: 'Nový úkol', scanner: 'Skenovat kód', recipe: 'Nový recept' }
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">Grocy Homie</span><h2>{titles[kind]}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div>
     {kind === 'scanner' ? <BarcodeScanner onDetected={code => { notify(`Naskenován kód ${code}`); close() }} /> : <form onSubmit={submit}>
-      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" list="pantry-categories" defaultValue={settings.defaultCategory} placeholder="Vyberte nebo napište novou" /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label="Umístění"><select name="location" defaultValue={settings.defaultLocation}><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue={settings.defaultQuantity} required /></Field><Field label="Jednotka"><UnitSelect defaultValue={settings.defaultUnit} /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue={settings.defaultMinimum} required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue="0" /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" /></Field></div><Field label="EAN / čárový kód"><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />Skenovat</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(`EAN ${code} načten`) }} onCancel={() => setScannerOpen(false)} compact />}<Field label="Vlastní fotografie"><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{image ? <img src={image} alt="Náhled produktu" /> : <><Plus size={20} /><small>Vyfotit nebo vybrat obrázek</small></>}</span>{image && <span>Změnit fotografii</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
+      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus defaultValue={editingPantry?.name} placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" list="pantry-categories" defaultValue={editingPantry?.category ?? settings.defaultCategory} placeholder="Vyberte nebo napište novou" /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label="Umístění"><select name="location" defaultValue={editingPantry?.location ?? settings.defaultLocation}>{locations.map(location => <option key={location}>{location}</option>)}</select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue={editingPantry?.quantity ?? settings.defaultQuantity} required /></Field><Field label="Jednotka"><UnitSelect defaultValue={editingPantry?.unit ?? settings.defaultUnit} /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue={editingPantry?.minimum ?? settings.defaultMinimum} required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue={editingPantry?.priceCzk ?? 0} /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={editingPantry?.purchasedAt ?? today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" defaultValue={editingPantry?.expiresAt} /></Field></div><Field label="EAN / čárový kód"><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />Skenovat</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(`EAN ${code} načten`) }} onCancel={() => setScannerOpen(false)} compact />}<Field label="Odkaz na obrázek"><input type="url" value={imageUrl} onChange={event => { setImageUrl(event.target.value); if (event.target.value) setImage(undefined) }} placeholder="https://…/produkt.jpg" /></Field><Field label="Vlastní fotografie"><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{imageSource ? <img src={imageSource} alt="Náhled produktu" /> : <><Plus size={20} /><small>Vyfotit nebo vybrat obrázek</small></>}</span>{imageSource && <span>Změnit fotografii</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
       {kind === 'freezer' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Kuřecí stehna" /></Field><Field label="Kategorie a doporučená doba"><select name="category">{freezerGuide.map(g => <option key={g.category}>{g.category}</option>)}</select></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Datum zmrazení"><input name="frozenAt" type="date" defaultValue={today()} required /></Field><Field label="Poznámka"><input name="note" placeholder="např. porce 500 g" /></Field></div></>}
       {kind === 'shopping' && <><Field label="Seznam"><select name="list">{data.shoppingLists.filter(l => !l.archived).map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label="Název"><input name="name" required autoFocus placeholder="Co koupit?" /></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Odhad ceny v Kč"><input name="price" type="number" min="0" step="0.01" /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />Po nákupu přidat do domácích zásob</label></>}
       {kind === 'todo' && <><Field label="Co je potřeba udělat?"><input name="title" required autoFocus placeholder="např. Uklidit lednici" /></Field><div className="form-grid"><Field label="Datum"><input name="date" type="date" defaultValue={today()} required /></Field><Field label="Kategorie"><select name="category"><option>Domácnost</option><option>Nákup</option><option>Rodina</option><option>Jiné</option></select></Field></div></>}
-      <div className="modal-actions"><button type="button" className="secondary" onClick={close}>Zrušit</button><button className="primary" type="submit"><Plus size={18} />Přidat</button></div>
+      {kind === 'recipe' && <><div className="recipe-title-fields"><Field label="Emoji"><input name="emoji" defaultValue="🍽️" maxLength={4} /></Field><Field label="Název receptu"><input name="name" required autoFocus placeholder="např. Kuře na paprice" /></Field></div><div className="form-grid"><Field label="Čas v minutách"><input name="minutes" type="number" min="1" defaultValue="30" required /></Field><Field label="Počet porcí"><input name="servings" type="number" min="1" defaultValue="4" required /></Field></div><Field label="Štítky oddělené čárkou"><input name="tags" placeholder="Rychlé, Večeře, Vegetariánské" /></Field><Field label="Ingredience — jedna na řádek ve formátu název | množství"><textarea name="ingredients" rows={7} required placeholder={'Kuřecí maso | 500 g\nPaprika | 2 ks\nSmetana | 200 ml'} /></Field><Field label="Postup"><textarea name="instructions" rows={6} required placeholder="Popište jednotlivé kroky přípravy…" /></Field></>}
+      <div className="modal-actions"><button type="button" className="secondary" onClick={close}>Zrušit</button><button className="primary" type="submit">{editingPantry && kind === 'pantry' ? <Pencil size={18} /> : <Plus size={18} />}{editingPantry && kind === 'pantry' ? 'Uložit změny' : 'Přidat'}</button></div>
     </form>}
   </div></div>
 }
@@ -383,7 +404,7 @@ function BarcodeScanner({ onDetected, onCancel, compact }: { onDetected: (code: 
 function Stat({ icon, tone, label, value, note, warning, onClick }: { icon: ReactNode; tone: string; label: string; value: string; note: string; warning?: boolean; onClick?: () => void }) { return <button className="stat-card" onClick={onClick}><span className={`stat-icon ${tone}`}>{icon}</span><span><small>{label}</small><strong>{value}</strong><em className={warning ? 'warn' : ''}>{warning && <AlertTriangle size={12} />}{note}</em></span>{onClick && <ChevronRight className="stat-arrow" size={18} />}</button> }
 function PanelHead({ title, subtitle, action, onClick }: { title: string; subtitle: string; action?: string; onClick?: () => void }) { return <div className="panel-head"><div><h3>{title}</h3><p>{subtitle}</p></div>{action && <button onClick={onClick}>{action}<ChevronRight size={15} /></button>}</div> }
 function PageIntro({ title, subtitle, button, icon, onClick }: { title: string; subtitle: string; button: string; icon: ReactNode; onClick: () => void }) { return <section className="page-intro"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="primary" onClick={onClick}>{icon}{button}</button></section> }
-function ProductIcon({ name, image, large }: { name: string; image?: string; large?: boolean }) { const n = name.toLowerCase(); const emoji = n.includes('mlék') ? '🥛' : n.includes('fazol') ? '🫘' : n.includes('losos') || n.includes('ryb') ? '🐟' : n.includes('kuř') ? '🍗' : n.includes('zelen') ? '🥦' : n.includes('vývar') || n.includes('polév') ? '🥣' : n.includes('olej') ? '🫒' : n.includes('těst') ? '🍝' : n.includes('pleny') || n.includes('ubrou') ? '🧸' : '📦'; return <span className={`product-icon ${large ? 'large' : ''}`}>{image ? <img src={image} alt="" /> : emoji}</span> }
+function ProductIcon({ name, image, large }: { name: string; image?: string; large?: boolean }) { const [failed, setFailed] = useState(false); const n = name.toLowerCase(); const emoji = n.includes('mlék') ? '🥛' : n.includes('fazol') ? '🫘' : n.includes('losos') || n.includes('ryb') ? '🐟' : n.includes('kuř') ? '🍗' : n.includes('zelen') ? '🥦' : n.includes('vývar') || n.includes('polév') ? '🥣' : n.includes('olej') ? '🫒' : n.includes('těst') ? '🍝' : n.includes('pleny') || n.includes('ubrou') ? '🧸' : '📦'; return <span className={`product-icon ${large ? 'large' : ''}`}>{image && !failed ? <img src={image} alt="" onError={() => setFailed(true)} /> : emoji}</span> }
 function Quantity({ value, unit, onMinus, onPlus, large }: { value: number; unit: Unit; onMinus: () => void; onPlus: () => void; large?: boolean }) { return <div className={`quantity ${large ? 'large' : ''}`}><button onClick={onMinus}><Minus size={15} /></button><strong>{value}<small>{unit}</small></strong><button onClick={onPlus}><Plus size={15} /></button></div> }
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={22} /><span>{text}</span></div> }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }

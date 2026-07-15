@@ -6,18 +6,18 @@ Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze fun
 
 - přehled domácnosti s upozorněními a rychlými akcemi
 - globální fulltext přes zásoby, mrazák, nákupy, recepty a úkoly (`Ctrl/⌘ + K`)
-- kanbanové zásoby, množství +/−, minima, ceny, data nákupu a expirace
+- kanbanové zásoby s editací položek, množstvím +/−, minimy, cenami, daty nákupu a expirace
 - skenování EAN/QR živou kamerou nebo fotografií kódu
-- vlastní fotografie produktů, automaticky zmenšené na thumbnail
-- přednastavené i uživatelské kategorie
+- vlastní fotografie produktů nebo odkaz na existující obrázek; nahrané fotografie se automaticky zmenší na thumbnail
+- upravitelné kategorie a umístění položek
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
 - nákupní seznamy podle obchodu a typu, průběžná cena a převod nákupu do zásob
 - archivace a obnovení nákupních seznamů
-- recepty s odesláním ingrediencí na nákupní seznam
+- vlastní recepty s ingrediencemi, postupem, štítky a odesláním ingrediencí na nákupní seznam
 - úkoly a měsíční kalendář
 - CZK/EUR s kurzem načítaným z ECB (a bezpečnou poslední známou hodnotou při offline režimu)
 - světlý a tmavý režim, responzivní rozložení
-- nastavení názvu domácnosti, systémového/světlého/tmavého režimu, akcentní barvy a výchozích hodnot zásob
+- nastavení názvu domácnosti, systémového/světlého/tmavého režimu, akcentní barvy včetně color pickeru a výchozích hodnot zásob
 - lokální uložení všech změn
 
 ## Spuštění
