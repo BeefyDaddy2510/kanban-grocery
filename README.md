@@ -1,10 +1,11 @@
-# Domovka
+# Grocy Homie
 
 Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze funguje bez účtu a serveru — data se ukládají přímo do prohlížeče.
 
 ## Co je hotové
 
 - přehled domácnosti s upozorněními a rychlými akcemi
+- globální fulltext přes zásoby, mrazák, nákupy, recepty a úkoly (`Ctrl/⌘ + K`)
 - kanbanové zásoby, množství +/−, minima, ceny, data nákupu a expirace
 - skenování EAN/QR živou kamerou nebo fotografií kódu
 - vlastní fotografie produktů, automaticky zmenšené na thumbnail
@@ -16,6 +17,7 @@ Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze fun
 - úkoly a měsíční kalendář
 - CZK/EUR s kurzem načítaným z ECB (a bezpečnou poslední známou hodnotou při offline režimu)
 - světlý a tmavý režim, responzivní rozložení
+- nastavení názvu domácnosti, systémového/světlého/tmavého režimu, akcentní barvy a výchozích hodnot zásob
 - lokální uložení všech změn
 
 ## Spuštění

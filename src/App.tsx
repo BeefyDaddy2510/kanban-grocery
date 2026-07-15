@@ -4,25 +4,37 @@ import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
   ListChecks, Menu, Minus, Moon, Package, Plus, ScanLine, Search, ShoppingBasket,
-  Snowflake, Sparkles, Sun, Trash2, X,
+  Settings, Snowflake, Sparkles, Sun, Trash2, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
-import type { AppData, Currency, FreezerItem, PantryItem, ShoppingItem, Todo, Unit } from './types'
+import type { AccentColor, AppData, Currency, FreezerItem, PantryItem, ShoppingItem, SiteSettings, Todo, Unit } from './types'
 
-type Page = 'Přehled' | 'Zásoby' | 'Mrazák' | 'Nákupy' | 'Recepty' | 'Úkoly'
+type Page = 'Přehled' | 'Zásoby' | 'Mrazák' | 'Nákupy' | 'Recepty' | 'Úkoly' | 'Nastavení'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | null
 
 const STORE_KEY = 'domovka-data-v1'
+const SETTINGS_KEY = 'grocy-homie-settings-v1'
+const defaultSettings: SiteSettings = {
+  householdName: 'Domácnost Novákových', theme: 'system', accent: 'coral', defaultCurrency: 'CZK',
+  defaultLocation: 'Spíž', defaultCategory: 'Ostatní', defaultUnit: 'ks', defaultQuantity: 1, defaultMinimum: 1,
+}
+const accentColors: Record<AccentColor, { label: string; value: string; dark: string }> = {
+  coral: { label: 'Korálová', value: '#e9694b', dark: '#c9543b' },
+  green: { label: 'Šalvějová', value: '#668b70', dark: '#4d7057' },
+  blue: { label: 'Modrá', value: '#5f93ab', dark: '#477b92' },
+  plum: { label: 'Švestková', value: '#8a668f', dark: '#6e5073' },
+}
 const NAV: { label: Page; icon: typeof Package }[] = [
   { label: 'Přehled', icon: LayoutDashboard }, { label: 'Zásoby', icon: Package },
   { label: 'Mrazák', icon: Snowflake }, { label: 'Nákupy', icon: ShoppingBasket },
-  { label: 'Recepty', icon: ChefHat }, { label: 'Úkoly', icon: ListChecks },
+  { label: 'Recepty', icon: ChefHat }, { label: 'Úkoly', icon: ListChecks }, { label: 'Nastavení', icon: Settings },
 ]
 const units: Unit[] = ['ks', 'bal.', 'kg', 'g', 'l', 'ml']
 const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 const today = () => new Date().toISOString().slice(0, 10)
 const formatDate = (value?: string) => value ? new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—'
 const daysBetween = (from: string, to: string) => Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000)
+const householdInitials = (name: string) => name.replace(/^domácnost\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'GH'
 
 const prepareThumbnail = (file: File) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader()
@@ -49,19 +61,40 @@ function App() {
   const [data, setData] = useState<AppData>(() => {
     try { return JSON.parse(localStorage.getItem(STORE_KEY) || '') as AppData } catch { return initialData }
   })
-  const [dark, setDark] = useState(() => localStorage.getItem('domovka-theme') === 'dark')
-  const [currency, setCurrency] = useState<Currency>('CZK')
+  const [settings, setSettings] = useState<SiteSettings>(() => {
+    try { return { ...defaultSettings, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '') } as SiteSettings }
+    catch { return { ...defaultSettings, theme: localStorage.getItem('domovka-theme') === 'dark' ? 'dark' : 'system' } }
+  })
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const dark = settings.theme === 'dark' || (settings.theme === 'system' && systemDark)
+  const [currency, setCurrency] = useState<Currency>(settings.defaultCurrency)
   const [rate, setRate] = useState(24.284)
   const [rateDate, setRateDate] = useState('14. 7. 2026')
   const [modal, setModal] = useState<ModalKind>(null)
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => localStorage.setItem(STORE_KEY, JSON.stringify(data)), [data])
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
-    localStorage.setItem('domovka-theme', dark ? 'dark' : 'light')
-  }, [dark])
+    const accent = accentColors[settings.accent]
+    document.documentElement.style.setProperty('--brand', accent.value)
+    document.documentElement.style.setProperty('--brand-dark', accent.dark)
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+  }, [dark, settings])
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    const change = (event: MediaQueryListEvent) => setSystemDark(event.matches)
+    media.addEventListener('change', change); return () => media.removeEventListener('change', change)
+  }, [])
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setSearchOpen(true) }
+      if (event.key === 'Escape') setSearchOpen(false)
+    }
+    window.addEventListener('keydown', keydown); return () => window.removeEventListener('keydown', keydown)
+  }, [])
   useEffect(() => {
     fetch('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml')
       .then(r => r.text()).then(xml => {
@@ -78,7 +111,7 @@ function App() {
   const lowItems = data.pantry.filter(i => i.quantity < i.minimum)
   const expiringItems = data.pantry.filter(i => i.expiresAt && daysBetween(today(), i.expiresAt) <= 7 && daysBetween(today(), i.expiresAt) >= 0)
   const freezerWarnings = data.freezer.filter(i => freezerProgress(i) >= 90)
-  const pendingShopping = data.shoppingLists.flatMap(l => l.items).filter(i => !i.checked).length
+  const pendingShopping = data.shoppingLists.filter(l => !l.archived).flatMap(l => l.items).filter(i => !i.checked).length
   const inventoryValue = data.pantry.reduce((sum, item) => sum + item.priceCzk * item.quantity, 0)
 
   const updatePantry = (id: string, delta: number) => setData(prev => ({ ...prev, pantry: prev.pantry.map(i => i.id === id ? { ...i, quantity: Math.max(0, +(i.quantity + delta).toFixed(2)) } : i) }))
@@ -94,25 +127,56 @@ function App() {
     'Nákupy': <Shopping data={data} setData={setData} money={money} open={setModal} notify={notify} />,
     'Recepty': <Recipes data={data} setData={setData} notify={notify} go={go} />,
     'Úkoly': <Todos data={data} setData={setData} toggle={toggleTodo} open={() => setModal('todo')} />,
+    'Nastavení': <SettingsPage settings={settings} setSettings={setSettings} setCurrency={setCurrency} notify={notify} />,
   }
 
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? 'is-open' : ''}`}>
       <button className="mobile-close icon-btn" onClick={() => setMobileNav(false)} aria-label="Zavřít menu"><X size={20} /></button>
-      <button className="brand" onClick={() => go('Přehled')}><span className="brand-mark"><Sparkles size={20} /></span><span>domovka<small>Všechno doma v klidu</small></span></button>
+      <button className="brand" onClick={() => go('Přehled')}><span className="brand-mark"><Sparkles size={20} /></span><span>Grocy Homie<small>Všechno doma v klidu</small></span></button>
       <nav>{NAV.map(({ label, icon: Icon }) => <button key={label} className={page === label ? 'active' : ''} onClick={() => go(label)}><Icon size={19} /><span>{label}</span>{label === 'Zásoby' && lowItems.length > 0 && <b>{lowItems.length}</b>}</button>)}</nav>
       <div className="sidebar-card"><div className="sidebar-card-icon"><Archive size={18} /></div><div><strong>{data.pantry.length + data.freezer.length} položek</strong><span>ve vaší domácnosti</span></div></div>
-      <div className="sidebar-foot"><button className="currency-toggle" onClick={() => setCurrency(currency === 'CZK' ? 'EUR' : 'CZK')}><Euro size={17} /><span>{currency}</span><small>1 EUR = {rate.toFixed(3)} Kč</small></button><button className="icon-btn" onClick={() => setDark(!dark)} aria-label="Přepnout vzhled">{dark ? <Sun size={19} /> : <Moon size={19} />}</button></div>
+      <div className="sidebar-foot"><button className="currency-toggle" onClick={() => setCurrency(currency === 'CZK' ? 'EUR' : 'CZK')}><Euro size={17} /><span>{currency}</span><small>1 EUR = {rate.toFixed(3)} Kč</small></button><button className="icon-btn" onClick={() => setSettings(s => ({ ...s, theme: dark ? 'light' : 'dark' }))} aria-label="Přepnout vzhled">{dark ? <Sun size={19} /> : <Moon size={19} />}</button></div>
     </aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} />}
     <main>
-      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">Domácnost Novákových</span><h1>{page}</h1></div><div className="top-actions"><button className="search-button"><Search size={18} /><span>Hledat…</span><kbd>⌘ K</kbd></button><button className="avatar">DN</button></div></header>
+      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{page}</h1></div><div className="top-actions"><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>Hledat…</span><kbd>⌘ K</kbd></button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
       <div className="page-content">{pageContent[page]}</div>
-      <footer>Domovka · kurz ECB z {rateDate} · data jsou uložená v tomto prohlížeči</footer>
+      <footer>Grocy Homie · kurz ECB z {rateDate} · data jsou uložená v tomto prohlížeči</footer>
     </main>
-    {modal && <Modal kind={modal} close={() => setModal(null)} data={data} setData={setData} notify={notify} />}
+    {modal && <Modal kind={modal} close={() => setModal(null)} data={data} setData={setData} notify={notify} settings={settings} />}
+    {searchOpen && <GlobalSearch data={data} close={() => setSearchOpen(false)} go={target => { setSearchOpen(false); go(target) }} />}
     {toast && <div className="toast"><CheckCircle2 size={19} />{toast}</div>}
   </div>
+}
+
+function GlobalSearch({ data, close, go }: { data: AppData; close: () => void; go: (page: Page) => void }) {
+  const [query, setQuery] = useState('')
+  const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const results = useMemo(() => {
+    const all: { id: string; page: Page; title: string; meta: string; search: string }[] = [
+      ...data.pantry.map(item => ({ id: `p-${item.id}`, page: 'Zásoby' as Page, title: item.name, meta: `${item.category} · ${item.location} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.location, item.barcode].join(' ') })),
+      ...data.freezer.map(item => ({ id: `f-${item.id}`, page: 'Mrazák' as Page, title: item.name, meta: `${item.category} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.note].join(' ') })),
+      ...data.shoppingLists.flatMap(list => list.items.map(item => ({ id: `s-${list.id}-${item.id}`, page: 'Nákupy' as Page, title: item.name, meta: `${list.name} · ${list.type}${list.archived ? ' · archiv' : ''}`, search: [item.name, list.name, list.type].join(' ') }))),
+      ...data.recipes.map(recipe => ({ id: `r-${recipe.id}`, page: 'Recepty' as Page, title: recipe.name, meta: `${recipe.minutes} min · ${recipe.tags.join(', ')}`, search: [recipe.name, recipe.tags.join(' '), recipe.instructions, recipe.ingredients.map(i => i.name).join(' ')].join(' ') })),
+      ...data.todos.map(todo => ({ id: `t-${todo.id}`, page: 'Úkoly' as Page, title: todo.title, meta: `${todo.category} · ${formatDate(todo.date)}`, search: [todo.title, todo.category].join(' ') })),
+    ]
+    const needle = normalize(query.trim())
+    return needle ? all.filter(item => normalize(item.search).includes(needle)).slice(0, 40) : []
+  }, [data, query])
+  return <div className="search-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><section className="global-search"><div className="global-search-input"><Search size={21} /><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder="Hledat v zásobách, nákupech, receptech a úkolech…" /><button className="icon-btn" onClick={close}><X size={18} /></button></div><div className="search-results">{!query.trim() ? <div className="search-empty"><Search size={28} /><strong>Prohledejte celý Grocy Homie</strong><span>Fungují názvy, kategorie, EAN, ingredience, obchody i úkoly.</span></div> : results.length ? results.map(result => <button key={result.id} onClick={() => go(result.page)}><span className="search-result-icon"><Search size={16} /></span><span className="grow"><strong>{result.title}</strong><small>{result.meta}</small></span><span>{result.page}</span><ChevronRight size={17} /></button>) : <div className="search-empty"><Search size={28} /><strong>Nic jsme nenašli</strong><span>Zkuste kratší nebo obecnější výraz.</span></div>}</div><footer><span><kbd>Esc</kbd> zavřít</span><span>{results.length ? `${results.length} výsledků` : 'Ctrl/⌘ + K'}</span></footer></section></div>
+}
+
+function SettingsPage({ settings, setSettings, setCurrency, notify }: { settings: SiteSettings; setSettings: React.Dispatch<React.SetStateAction<SiteSettings>>; setCurrency: (currency: Currency) => void; notify: (text: string) => void }) {
+  const update = <K extends keyof SiteSettings>(key: K, value: SiteSettings[K]) => setSettings(current => ({ ...current, [key]: value }))
+  const reset = () => { setSettings(defaultSettings); setCurrency(defaultSettings.defaultCurrency); notify('Výchozí nastavení bylo obnoveno') }
+  return <><PageIntro title="Nastavení Grocy Homie" subtitle="Přizpůsobte vzhled domácnosti a předvyplněné hodnoty nových položek." button="Obnovit výchozí" icon={<Settings />} onClick={reset} />
+    <div className="settings-grid">
+      <section className="settings-card"><div className="settings-card-head"><Settings size={20} /><div><h3>Domácnost</h3><p>Název se zobrazí v záhlaví na všech zařízeních.</p></div></div><Field label="Název domácnosti"><input value={settings.householdName} onChange={event => update('householdName', event.target.value)} placeholder="např. U Nováků" /></Field><Field label="Výchozí měna"><select value={settings.defaultCurrency} onChange={event => { const value = event.target.value as Currency; update('defaultCurrency', value); setCurrency(value) }}><option value="CZK">CZK — česká koruna</option><option value="EUR">EUR — euro</option></select></Field></section>
+      <section className="settings-card"><div className="settings-card-head"><Sun size={20} /><div><h3>Vzhled</h3><p>Režim a hlavní barva ovládacích prvků.</p></div></div><span className="setting-label">Barevný režim</span><div className="theme-options">{([['system','Podle zařízení'],['light','Světlý'],['dark','Tmavý']] as const).map(([value, label]) => <button key={value} className={settings.theme === value ? 'active' : ''} onClick={() => update('theme', value)}>{value === 'dark' ? <Moon size={17} /> : value === 'light' ? <Sun size={17} /> : <Settings size={17} />}{label}</button>)}</div><span className="setting-label">Akcentní barva</span><div className="accent-options">{(Object.entries(accentColors) as [AccentColor, typeof accentColors[AccentColor]][]).map(([key, color]) => <button key={key} className={settings.accent === key ? 'active' : ''} onClick={() => update('accent', key)}><i style={{ background: color.value }} />{color.label}{settings.accent === key && <Check size={14} />}</button>)}</div></section>
+      <section className="settings-card span-2"><div className="settings-card-head"><Package size={20} /><div><h3>Výchozí hodnoty zásob</h3><p>Automaticky se předvyplní při každém přidání nové položky.</p></div></div><div className="settings-defaults"><Field label="Kategorie"><input value={settings.defaultCategory} onChange={event => update('defaultCategory', event.target.value)} placeholder="Ostatní" /></Field><Field label="Umístění"><select value={settings.defaultLocation} onChange={event => update('defaultLocation', event.target.value as PantryItem['location'])}><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Jednotka"><select value={settings.defaultUnit} onChange={event => update('defaultUnit', event.target.value as Unit)}>{units.map(unit => <option key={unit}>{unit}</option>)}</select></Field><Field label="Množství"><input type="number" min="0" step="0.1" value={settings.defaultQuantity} onChange={event => update('defaultQuantity', Number(event.target.value))} /></Field><Field label="Kanban minimum"><input type="number" min="0" step="0.1" value={settings.defaultMinimum} onChange={event => update('defaultMinimum', Number(event.target.value))} /></Field></div><div className="settings-note"><CheckCircle2 size={17} />Změny se ukládají automaticky v tomto prohlížeči.</div></section>
+    </div>
+  </>
 }
 
 function Dashboard({ data, lowItems, expiringItems, freezerWarnings, pendingShopping, inventoryValue, money, go, updatePantry, toggleTodo }: {
@@ -124,7 +188,7 @@ function Dashboard({ data, lowItems, expiringItems, freezerWarnings, pendingShop
     <section className="stats-grid">
       <Stat icon={<Package />} tone="coral" label="Zásoby" value={`${data.pantry.length} položek`} note={`${lowItems.length} pod minimem`} warning={lowItems.length > 0} onClick={() => go('Zásoby')} />
       <Stat icon={<Snowflake />} tone="blue" label="Mrazák" value={`${data.freezer.length} položek`} note={`${freezerWarnings.length} brzy spotřebovat`} warning={freezerWarnings.length > 0} onClick={() => go('Mrazák')} />
-      <Stat icon={<ShoppingBasket />} tone="green" label="Nákup" value={`${pendingShopping} zbývá`} note={`${data.shoppingLists.length} aktivní seznamy`} onClick={() => go('Nákupy')} />
+      <Stat icon={<ShoppingBasket />} tone="green" label="Nákup" value={`${pendingShopping} zbývá`} note={`${data.shoppingLists.filter(list => !list.archived).length} aktivní seznamy`} onClick={() => go('Nákupy')} />
       <Stat icon={<CircleDollarSign />} tone="gold" label="Hodnota zásob" value={money(inventoryValue)} note="orientační součet" />
     </section>
     {(lowItems.length > 0 || expiringItems.length > 0) && <section className="alert-strip"><AlertTriangle size={20} /><div><strong>Vyžaduje pozornost</strong><span>{lowItems.length} položky pod minimem · {expiringItems.length} položky brzy expirují</span></div><button onClick={() => go('Zásoby')}>Zkontrolovat <ArrowRight size={16} /></button></section>}
@@ -241,7 +305,7 @@ function Todos({ data, setData, toggle, open }: { data: AppData; setData: React.
   </>
 }
 
-function Modal({ kind, close, data, setData, notify }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void }) {
+function Modal({ kind, close, data, setData, notify, settings }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; settings: SiteSettings }) {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [barcode, setBarcode] = useState('')
   const [image, setImage] = useState<string>()
@@ -271,9 +335,9 @@ function Modal({ kind, close, data, setData, notify }: { kind: Exclude<ModalKind
     close()
   }
   const titles = { pantry: 'Přidat do zásob', freezer: 'Přidat do mrazáku', shopping: 'Přidat na nákup', todo: 'Nový úkol', scanner: 'Skenovat kód' }
-  return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">Domovka</span><h2>{titles[kind]}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div>
+  return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">Grocy Homie</span><h2>{titles[kind]}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div>
     {kind === 'scanner' ? <BarcodeScanner onDetected={code => { notify(`Naskenován kód ${code}`); close() }} /> : <form onSubmit={submit}>
-      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" list="pantry-categories" placeholder="Vyberte nebo napište novou" /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label="Umístění"><select name="location"><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue="0" /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" /></Field></div><Field label="EAN / čárový kód"><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />Skenovat</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(`EAN ${code} načten`) }} onCancel={() => setScannerOpen(false)} compact />}<Field label="Vlastní fotografie"><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{image ? <img src={image} alt="Náhled produktu" /> : <><Plus size={20} /><small>Vyfotit nebo vybrat obrázek</small></>}</span>{image && <span>Změnit fotografii</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
+      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" list="pantry-categories" defaultValue={settings.defaultCategory} placeholder="Vyberte nebo napište novou" /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label="Umístění"><select name="location" defaultValue={settings.defaultLocation}><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue={settings.defaultQuantity} required /></Field><Field label="Jednotka"><UnitSelect defaultValue={settings.defaultUnit} /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue={settings.defaultMinimum} required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue="0" /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" /></Field></div><Field label="EAN / čárový kód"><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />Skenovat</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(`EAN ${code} načten`) }} onCancel={() => setScannerOpen(false)} compact />}<Field label="Vlastní fotografie"><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{image ? <img src={image} alt="Náhled produktu" /> : <><Plus size={20} /><small>Vyfotit nebo vybrat obrázek</small></>}</span>{image && <span>Změnit fotografii</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
       {kind === 'freezer' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Kuřecí stehna" /></Field><Field label="Kategorie a doporučená doba"><select name="category">{freezerGuide.map(g => <option key={g.category}>{g.category}</option>)}</select></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Datum zmrazení"><input name="frozenAt" type="date" defaultValue={today()} required /></Field><Field label="Poznámka"><input name="note" placeholder="např. porce 500 g" /></Field></div></>}
       {kind === 'shopping' && <><Field label="Seznam"><select name="list">{data.shoppingLists.filter(l => !l.archived).map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label="Název"><input name="name" required autoFocus placeholder="Co koupit?" /></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Odhad ceny v Kč"><input name="price" type="number" min="0" step="0.01" /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />Po nákupu přidat do domácích zásob</label></>}
       {kind === 'todo' && <><Field label="Co je potřeba udělat?"><input name="title" required autoFocus placeholder="např. Uklidit lednici" /></Field><div className="form-grid"><Field label="Datum"><input name="date" type="date" defaultValue={today()} required /></Field><Field label="Kategorie"><select name="category"><option>Domácnost</option><option>Nákup</option><option>Rodina</option><option>Jiné</option></select></Field></div></>}
@@ -323,7 +387,7 @@ function ProductIcon({ name, image, large }: { name: string; image?: string; lar
 function Quantity({ value, unit, onMinus, onPlus, large }: { value: number; unit: Unit; onMinus: () => void; onPlus: () => void; large?: boolean }) { return <div className={`quantity ${large ? 'large' : ''}`}><button onClick={onMinus}><Minus size={15} /></button><strong>{value}<small>{unit}</small></strong><button onClick={onPlus}><Plus size={15} /></button></div> }
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={22} /><span>{text}</span></div> }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }
-function UnitSelect() { return <select name="unit">{units.map(u => <option key={u}>{u}</option>)}</select> }
+function UnitSelect({ defaultValue }: { defaultValue?: Unit }) { return <select name="unit" defaultValue={defaultValue}>{units.map(u => <option key={u}>{u}</option>)}</select> }
 function freezerProgress(item: FreezerItem) { const months = Math.max(0, daysBetween(item.frozenAt, today()) / 30.44); return months / item.recommendedMonths * 100 }
 
 export default App

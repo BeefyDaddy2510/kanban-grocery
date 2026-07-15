@@ -1,5 +1,19 @@
 export type Currency = 'CZK' | 'EUR'
 export type Unit = 'ks' | 'kg' | 'g' | 'l' | 'ml' | 'bal.'
+export type ThemeMode = 'system' | 'light' | 'dark'
+export type AccentColor = 'coral' | 'green' | 'blue' | 'plum'
+
+export interface SiteSettings {
+  householdName: string
+  theme: ThemeMode
+  accent: AccentColor
+  defaultCurrency: Currency
+  defaultLocation: PantryItem['location']
+  defaultCategory: string
+  defaultUnit: Unit
+  defaultQuantity: number
+  defaultMinimum: number
+}
 
 export interface PantryItem {
   id: string
