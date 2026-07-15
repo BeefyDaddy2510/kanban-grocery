@@ -31,6 +31,14 @@ export interface PantryItem {
   expiresAt?: string
   barcode?: string
   image?: string
+  nutritionPer100g?: {
+    kcal: number
+    carbs: number
+    fat: number
+    protein: number
+    fiber: number
+  }
+  portionGrams?: number
 }
 
 export interface FreezerItem {

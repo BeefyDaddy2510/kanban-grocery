@@ -9,6 +9,8 @@ Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze fun
 - kanbanové zásoby s editací položek, množstvím +/−, minimy, cenami, daty nákupu a expirace
 - skenování EAN/QR živou kamerou nebo fotografií kódu
 - vlastní fotografie produktů nebo odkaz na existující obrázek; nahrané fotografie se automaticky zmenší na thumbnail
+- výživové hodnoty na 100 g (kcal, sacharidy, tuky, bílkoviny a vláknina) s živým přepočtem podle zadané gramáže
+- propojení na veřejný katalog Kalorických tabulek pro dohledání nutričních údajů
 - upravitelné kategorie a umístění položek
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
 - nákupní seznamy podle obchodu a typu, průběžná cena a převod nákupu do zásob
