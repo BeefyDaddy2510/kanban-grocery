@@ -13,6 +13,7 @@ export interface PantryItem {
   purchasedAt: string
   expiresAt?: string
   barcode?: string
+  image?: string
 }
 
 export interface FreezerItem {
@@ -43,6 +44,7 @@ export interface ShoppingList {
   type: string
   color: string
   items: ShoppingItem[]
+  archived?: boolean
 }
 
 export interface Recipe {

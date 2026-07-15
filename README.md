@@ -6,8 +6,12 @@ Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze fun
 
 - přehled domácnosti s upozorněními a rychlými akcemi
 - kanbanové zásoby, množství +/−, minima, ceny, data nákupu a expirace
+- skenování EAN/QR živou kamerou nebo fotografií kódu
+- vlastní fotografie produktů, automaticky zmenšené na thumbnail
+- přednastavené i uživatelské kategorie
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
 - nákupní seznamy podle obchodu a typu, průběžná cena a převod nákupu do zásob
+- archivace a obnovení nákupních seznamů
 - recepty s odesláním ingrediencí na nákupní seznam
 - úkoly a měsíční kalendář
 - CZK/EUR s kurzem načítaným z ECB (a bezpečnou poslední známou hodnotou při offline režimu)
@@ -50,6 +54,10 @@ services:
 ```
 
 Po nasazení bude aplikace dostupná na `http://IP_SERVERU:8080`. Pokud je GHCR package soukromý, je potřeba v Portaineru nejprve přidat GitHub Container Registry s GitHub tokenem oprávněným ke čtení balíčků. Pro jednoduché domácí nasazení lze package na GitHubu přepnout na veřejný.
+
+### Kamera na telefonu
+
+Tlačítko **Vyfotit kód** otevře fotoaparát telefonu i při běžném HTTP přístupu a následně kód rozpozná z fotografie. Průběžné živé skenování vyžaduje, aby byla aplikace otevřená přes HTTPS (omezení mobilních prohlížečů). Pro živý náhled proto nastavte před aplikaci HTTPS reverse proxy, například Nginx Proxy Manager, Caddy nebo Traefik.
 
 Lokální sestavení a spuštění kontejneru:
 

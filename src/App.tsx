@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import type { IScannerControls } from '@zxing/browser'
 import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
@@ -22,6 +23,26 @@ const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
 const today = () => new Date().toISOString().slice(0, 10)
 const formatDate = (value?: string) => value ? new Intl.DateTimeFormat('cs-CZ', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—'
 const daysBetween = (from: string, to: string) => Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000)
+
+const prepareThumbnail = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onerror = () => reject(new Error('Fotografii se nepodařilo načíst.'))
+  reader.onload = () => {
+    const image = new Image()
+    image.onerror = () => reject(new Error('Tento formát obrázku nelze použít.'))
+    image.onload = () => {
+      const size = 360
+      const scale = Math.min(1, size / Math.max(image.width, image.height))
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, Math.round(image.width * scale))
+      canvas.height = Math.max(1, Math.round(image.height * scale))
+      canvas.getContext('2d')?.drawImage(image, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', .78))
+    }
+    image.src = String(reader.result)
+  }
+  reader.readAsDataURL(file)
+})
 
 function App() {
   const [page, setPage] = useState<Page>('Přehled')
@@ -136,7 +157,7 @@ function Pantry({ data, money, update, remove, open }: { data: AppData; money: (
     <div className="inventory-grid">{items.map(item => {
       const low = item.quantity < item.minimum
       const expiryDays = item.expiresAt ? daysBetween(today(), item.expiresAt) : null
-      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} large /><div className="card-badges">{low && <span className="badge danger">Doplnit</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? 'Po datu' : `${expiryDays} dny`}</span>}</div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>Kanban minimum</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className="card-meta"><span>{money(item.priceCzk)} / {item.unit}</span><span>{item.expiresAt ? `do ${formatDate(item.expiresAt)}` : 'bez expirace'}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label="Smazat"><Trash2 size={16} /></button></article>
+      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} image={item.image} large /><div className="card-badges">{low && <span className="badge danger">Doplnit</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? 'Po datu' : `${expiryDays} dny`}</span>}</div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>Kanban minimum</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className="card-meta"><span>{money(item.priceCzk)} / {item.unit}</span><span>{item.expiresAt ? `do ${formatDate(item.expiresAt)}` : 'bez expirace'}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label="Smazat"><Trash2 size={16} /></button></article>
     })}</div>{!items.length && <Empty text="Žádná položka neodpovídá filtru." />}
   </>
 }
@@ -153,25 +174,43 @@ function Freezer({ data, setData, open }: { data: AppData; setData: React.Dispat
 }
 
 function Shopping({ data, setData, money, open, notify }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
-  const [active, setActive] = useState(data.shoppingLists[0]?.id ?? '')
-  const list = data.shoppingLists.find(l => l.id === active) ?? data.shoppingLists[0]
+  const activeLists = data.shoppingLists.filter(l => !l.archived)
+  const archivedLists = data.shoppingLists.filter(l => l.archived)
+  const [active, setActive] = useState(activeLists[0]?.id ?? '')
+  const [showArchived, setShowArchived] = useState(false)
+  const list = activeLists.find(l => l.id === active) ?? activeLists[0]
+  useEffect(() => { if (list && list.id !== active) setActive(list.id) }, [active, list])
+  const archiveList = () => {
+    if (!list) return
+    setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, archived: true } : l) }))
+    notify(`Seznam „${list.name}“ byl archivován`)
+  }
+  const restoreList = (id: string) => {
+    setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === id ? { ...l, archived: false } : l) }))
+    setActive(id); setShowArchived(false); notify('Seznam byl obnoven')
+  }
+  if (!list) return <><PageIntro title="Nákupy pod kontrolou" subtitle="Všechny aktivní seznamy jsou archivované." button="Přidat položku" icon={<Plus />} onClick={() => notify('Nejprve obnovte seznam z archivu.')} /><ArchivedLists lists={archivedLists} restore={restoreList} /></>
   const toggle = (id: string) => setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id !== list.id ? l : { ...l, items: l.items.map(i => i.id === id ? { ...i, checked: !i.checked } : i) }) }))
   const finish = () => {
     const purchased = list.items.filter(i => i.checked && i.addToPantry)
     setData(p => ({ ...p, pantry: [...p.pantry, ...purchased.map<PantryItem>(i => ({ id: uid(), name: i.name, category: 'Z nákupu', location: 'Spíž', quantity: i.quantity, minimum: i.kanbanMinimum ?? 0, unit: i.unit, priceCzk: i.priceCzk ?? 0, purchasedAt: today() }))], shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, items: l.items.filter(i => !i.checked) } : l) }))
     notify(`${purchased.length} položek přidáno do domácích zásob`)
   }
-  if (!list) return <Empty text="Zatím nemáte žádný nákupní seznam." />
   const total = list.items.reduce((s, i) => s + (i.priceCzk ?? 0) * i.quantity, 0)
   return <>
     <PageIntro title="Nákupy pod kontrolou" subtitle="Seznamy podle obchodů, rychlé odškrtávání a přenos rovnou do zásob." button="Přidat položku" icon={<Plus />} onClick={() => open('shopping')} />
-    <div className="shopping-tabs">{data.shoppingLists.map(l => <button key={l.id} className={l.id === list.id ? 'active' : ''} onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {l.items.filter(i => !i.checked).length} zbývá</small></span></button>)}<button className="new-list"><Plus size={17} />Nový seznam</button></div>
-    <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />Skenovat kód</button></div>
+    <div className="shopping-tabs">{activeLists.map(l => <button key={l.id} className={l.id === list.id ? 'active' : ''} onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {l.items.filter(i => !i.checked).length} zbývá</small></span></button>)}<button className="new-list"><Plus size={17} />Nový seznam</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />Archiv ({archivedLists.length})</button>}</div>
+    {showArchived && <ArchivedLists lists={archivedLists} restore={restoreList} />}
+    <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary" onClick={archiveList}><Archive size={17} />Archivovat</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />Skenovat kód</button></div></div>
       <div className="shopping-progress"><div><span>Průběh nákupu</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
       <div className="shopping-items">{list.items.map(item => <label key={item.id} className={item.checked ? 'checked' : ''}><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ' · přidat do zásob' : ''}</small></span><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : 'zadat cenu'}</span></label>)}</div>
       <div className="shopping-summary"><div><span>Průběžná útrata</span><strong>{money(total)}</strong></div><button className="primary" disabled={!list.items.some(i => i.checked)} onClick={finish}><CheckCircle2 size={18} />Dokončit nákup</button></div>
     </section>
   </>
+}
+
+function ArchivedLists({ lists, restore }: { lists: AppData['shoppingLists']; restore: (id: string) => void }) {
+  return <section className="archived-lists"><div><Archive size={19} /><span><strong>Archivované seznamy</strong><small>Uchované pro pozdější použití</small></span></div>{lists.map(list => <article key={list.id}><i style={{ background: list.color }} /><span className="grow"><strong>{list.name}</strong><small>{list.type} · {list.items.length} položek</small></span><button className="secondary" onClick={() => restore(list.id)}>Obnovit</button></article>)}</section>
 }
 
 function Recipes({ data, setData, notify, go }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; go: (p: Page) => void }) {
@@ -203,11 +242,20 @@ function Todos({ data, setData, toggle, open }: { data: AppData; setData: React.
 }
 
 function Modal({ kind, close, data, setData, notify }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void }) {
-  const [scanning, setScanning] = useState(false)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [barcode, setBarcode] = useState('')
+  const [image, setImage] = useState<string>()
+  const [imageError, setImageError] = useState('')
+  const categories = [...new Set(['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', ...data.pantry.map(i => i.category)])].sort((a, b) => a.localeCompare(b, 'cs'))
+  const chooseImage = async (file?: File) => {
+    if (!file) return
+    setImageError('')
+    try { setImage(await prepareThumbnail(file)) } catch (error) { setImageError(error instanceof Error ? error.message : 'Fotografii se nepodařilo načíst.') }
+  }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const f = new FormData(e.currentTarget)
     if (kind === 'pantry') {
-      const item: PantryItem = { id: uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')) as PantryItem['location'], quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: String(f.get('barcode')) || undefined }
+      const item: PantryItem = { id: uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')) as PantryItem['location'], quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image }
       setData(p => ({ ...p, pantry: [item, ...p.pantry] })); notify('Položka přidána do zásob')
     } else if (kind === 'freezer') {
       const category = String(f.get('category')); const guide = freezerGuide.find(g => g.category === category)
@@ -224,20 +272,54 @@ function Modal({ kind, close, data, setData, notify }: { kind: Exclude<ModalKind
   }
   const titles = { pantry: 'Přidat do zásob', freezer: 'Přidat do mrazáku', shopping: 'Přidat na nákup', todo: 'Nový úkol', scanner: 'Skenovat kód' }
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">Domovka</span><h2>{titles[kind]}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div>
-    {kind === 'scanner' ? <div className="scanner"><div className={`scanner-frame ${scanning ? 'scanning' : ''}`}><ScanLine size={52} /><span>{scanning ? 'Hledám čárový nebo QR kód…' : 'Kamera je připravená'}</span></div><p>Namiřte kameru na EAN, čárový nebo QR kód obalu. V tomto prototypu můžete tok skenování vyzkoušet; rozpoznání produktu bude napojené na produktovou databázi v serverové verzi.</p><button className="primary full" onClick={() => setScanning(!scanning)}>{scanning ? <X size={18} /> : <ScanLine size={18} />}{scanning ? 'Zastavit' : 'Spustit kameru'}</button></div> : <form onSubmit={submit}>
-      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" placeholder="Konzervy" /></Field><Field label="Umístění"><select name="location"><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue="0" /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" /></Field></div><Field label="EAN / čárový kód"><input name="barcode" inputMode="numeric" placeholder="859…" /></Field></>}
+    {kind === 'scanner' ? <BarcodeScanner onDetected={code => { notify(`Naskenován kód ${code}`); close() }} /> : <form onSubmit={submit}>
+      {kind === 'pantry' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Červené fazole" /></Field><div className="form-grid"><Field label="Kategorie"><input name="category" list="pantry-categories" placeholder="Vyberte nebo napište novou" /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label="Umístění"><select name="location"><option>Spíž</option><option>Lednice</option><option>Koupelna</option><option>Drogerie</option></select></Field><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Cena v Kč"><input name="price" type="number" min="0" step="0.01" defaultValue="0" /></Field><Field label="Datum nákupu"><input name="purchasedAt" type="date" defaultValue={today()} required /></Field><Field label="Spotřebovat do (volitelně)"><input name="expiresAt" type="date" /></Field></div><Field label="EAN / čárový kód"><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />Skenovat</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(`EAN ${code} načten`) }} onCancel={() => setScannerOpen(false)} compact />}<Field label="Vlastní fotografie"><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{image ? <img src={image} alt="Náhled produktu" /> : <><Plus size={20} /><small>Vyfotit nebo vybrat obrázek</small></>}</span>{image && <span>Změnit fotografii</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
       {kind === 'freezer' && <><Field label="Název"><input name="name" required autoFocus placeholder="např. Kuřecí stehna" /></Field><Field label="Kategorie a doporučená doba"><select name="category">{freezerGuide.map(g => <option key={g.category}>{g.category}</option>)}</select></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Datum zmrazení"><input name="frozenAt" type="date" defaultValue={today()} required /></Field><Field label="Poznámka"><input name="note" placeholder="např. porce 500 g" /></Field></div></>}
-      {kind === 'shopping' && <><Field label="Seznam"><select name="list">{data.shoppingLists.map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label="Název"><input name="name" required autoFocus placeholder="Co koupit?" /></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Odhad ceny v Kč"><input name="price" type="number" min="0" step="0.01" /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />Po nákupu přidat do domácích zásob</label></>}
+      {kind === 'shopping' && <><Field label="Seznam"><select name="list">{data.shoppingLists.filter(l => !l.archived).map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label="Název"><input name="name" required autoFocus placeholder="Co koupit?" /></Field><div className="form-grid"><Field label="Množství"><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label="Jednotka"><UnitSelect /></Field><Field label="Odhad ceny v Kč"><input name="price" type="number" min="0" step="0.01" /></Field><Field label="Kanban minimum"><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />Po nákupu přidat do domácích zásob</label></>}
       {kind === 'todo' && <><Field label="Co je potřeba udělat?"><input name="title" required autoFocus placeholder="např. Uklidit lednici" /></Field><div className="form-grid"><Field label="Datum"><input name="date" type="date" defaultValue={today()} required /></Field><Field label="Kategorie"><select name="category"><option>Domácnost</option><option>Nákup</option><option>Rodina</option><option>Jiné</option></select></Field></div></>}
       <div className="modal-actions"><button type="button" className="secondary" onClick={close}>Zrušit</button><button className="primary" type="submit"><Plus size={18} />Přidat</button></div>
     </form>}
   </div></div>
 }
 
+function BarcodeScanner({ onDetected, onCancel, compact }: { onDetected: (code: string) => void; onCancel?: () => void; compact?: boolean }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const controlsRef = useRef<IScannerControls | null>(null)
+  const [running, setRunning] = useState(false)
+  const [message, setMessage] = useState('Namiřte zadní kameru na čárový nebo QR kód.')
+  const secure = window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname)
+  const stop = () => { controlsRef.current?.stop(); controlsRef.current = null; setRunning(false) }
+  useEffect(() => stop, [])
+  const start = async () => {
+    if (!secure || !navigator.mediaDevices?.getUserMedia) { setMessage('Kamera vyžaduje otevření aplikace přes HTTPS. Zatím můžete EAN zadat ručně.'); return }
+    setMessage('Povolte kameru a podržte kód uvnitř rámečku.'); setRunning(true)
+    try {
+      const { BrowserMultiFormatReader } = await import('@zxing/browser')
+      const reader = new BrowserMultiFormatReader()
+      controlsRef.current = await reader.decodeFromConstraints({ audio: false, video: { facingMode: { ideal: 'environment' } } }, videoRef.current ?? undefined, (result, _error, controls) => {
+        if (!result) return
+        const value = result.getText(); controls.stop(); controlsRef.current = null; setRunning(false); onDetected(value)
+      })
+    } catch (error) {
+      setRunning(false)
+      const name = error instanceof DOMException ? error.name : ''
+      setMessage(name === 'NotAllowedError' ? 'Přístup ke kameře nebyl povolen. Povolte jej v nastavení prohlížeče.' : 'Kameru se nepodařilo spustit. Zkontrolujte, zda ji nepoužívá jiná aplikace.')
+    }
+  }
+  const scanPhoto = async (file?: File) => {
+    if (!file) return
+    const url = URL.createObjectURL(file); setMessage('Rozpoznávám kód z fotografie…')
+    try { const { BrowserMultiFormatReader } = await import('@zxing/browser'); const result = await new BrowserMultiFormatReader().decodeFromImageUrl(url); onDetected(result.getText()) }
+    catch { setMessage('Na fotografii se nepodařilo najít kód. Zkuste jej vyfotit zblízka a bez odlesku.') }
+    finally { URL.revokeObjectURL(url) }
+  }
+  return <div className={`scanner ${compact ? 'compact' : ''}`}><div className={`scanner-frame ${running ? 'scanning' : ''}`}><video ref={videoRef} muted playsInline />{!running && <ScanLine size={46} />}<span>{message}</span></div><div className="scanner-actions">{running ? <button type="button" className="secondary" onClick={stop}><X size={17} />Zastavit</button> : <button type="button" className="primary" onClick={start}><ScanLine size={17} />Živá kamera</button>}<label className="secondary capture-code"><input type="file" accept="image/*" capture="environment" onChange={e => scanPhoto(e.target.files?.[0])} /><ScanLine size={17} />Vyfotit kód</label>{onCancel && <button type="button" className="secondary" onClick={() => { stop(); onCancel() }}>Zavřít</button>}</div></div>
+}
+
 function Stat({ icon, tone, label, value, note, warning, onClick }: { icon: ReactNode; tone: string; label: string; value: string; note: string; warning?: boolean; onClick?: () => void }) { return <button className="stat-card" onClick={onClick}><span className={`stat-icon ${tone}`}>{icon}</span><span><small>{label}</small><strong>{value}</strong><em className={warning ? 'warn' : ''}>{warning && <AlertTriangle size={12} />}{note}</em></span>{onClick && <ChevronRight className="stat-arrow" size={18} />}</button> }
 function PanelHead({ title, subtitle, action, onClick }: { title: string; subtitle: string; action?: string; onClick?: () => void }) { return <div className="panel-head"><div><h3>{title}</h3><p>{subtitle}</p></div>{action && <button onClick={onClick}>{action}<ChevronRight size={15} /></button>}</div> }
 function PageIntro({ title, subtitle, button, icon, onClick }: { title: string; subtitle: string; button: string; icon: ReactNode; onClick: () => void }) { return <section className="page-intro"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="primary" onClick={onClick}>{icon}{button}</button></section> }
-function ProductIcon({ name, large }: { name: string; large?: boolean }) { const n = name.toLowerCase(); const emoji = n.includes('mlék') ? '🥛' : n.includes('fazol') ? '🫘' : n.includes('losos') || n.includes('ryb') ? '🐟' : n.includes('kuř') ? '🍗' : n.includes('zelen') ? '🥦' : n.includes('vývar') || n.includes('polév') ? '🥣' : n.includes('olej') ? '🫒' : n.includes('těst') ? '🍝' : n.includes('pleny') || n.includes('ubrou') ? '🧸' : '📦'; return <span className={`product-icon ${large ? 'large' : ''}`}>{emoji}</span> }
+function ProductIcon({ name, image, large }: { name: string; image?: string; large?: boolean }) { const n = name.toLowerCase(); const emoji = n.includes('mlék') ? '🥛' : n.includes('fazol') ? '🫘' : n.includes('losos') || n.includes('ryb') ? '🐟' : n.includes('kuř') ? '🍗' : n.includes('zelen') ? '🥦' : n.includes('vývar') || n.includes('polév') ? '🥣' : n.includes('olej') ? '🫒' : n.includes('těst') ? '🍝' : n.includes('pleny') || n.includes('ubrou') ? '🧸' : '📦'; return <span className={`product-icon ${large ? 'large' : ''}`}>{image ? <img src={image} alt="" /> : emoji}</span> }
 function Quantity({ value, unit, onMinus, onPlus, large }: { value: number; unit: Unit; onMinus: () => void; onPlus: () => void; large?: boolean }) { return <div className={`quantity ${large ? 'large' : ''}`}><button onClick={onMinus}><Minus size={15} /></button><strong>{value}<small>{unit}</small></strong><button onClick={onPlus}><Plus size={15} /></button></div> }
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={22} /><span>{text}</span></div> }
 function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="field"><span>{label}</span>{children}</label> }
