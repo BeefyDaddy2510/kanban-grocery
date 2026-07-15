@@ -6,18 +6,12 @@ url: https://github.com/BeefyDaddy2510/kanban-grocery
 arch:
   - amd64
   - aarch64
-startup: application
-boot: auto
 init: false
-stage: stable
 backup: cold
 ingress: true
 ingress_port: 8080
 panel_title: Grocy Homie
 panel_icon: mdi:food-apple-outline
 panel_admin: false
-watchdog: http://[HOST]:[PORT:8080]/healthz
 image: ghcr.io/beefydaddy2510/kanban-grocery
 legacy: true
-options: {}
-schema: {}
