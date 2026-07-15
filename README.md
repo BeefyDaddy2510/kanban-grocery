@@ -13,9 +13,9 @@ Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze fun
 - propojení na veřejný katalog Kalorických tabulek pro dohledání nutričních údajů
 - upravitelné kategorie a umístění položek
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
-- nákupní seznamy podle obchodu a typu, průběžná cena a převod nákupu do zásob
+- nákupní seznamy podle obchodu a typu, průběžná cena a selektivní převod zakoupených položek do zásob
 - archivace a obnovení nákupních seznamů
-- vlastní recepty s ingrediencemi, postupem, štítky a odesláním ingrediencí na nákupní seznam
+- vlastní editovatelné recepty s ingrediencemi, postupem, štítky, výběrem surovin ze zásob a odesláním ingrediencí na nákupní seznam
 - úkoly a měsíční kalendář
 - CZK/EUR s kurzem načítaným z ECB (a bezpečnou poslední známou hodnotou při offline režimu)
 - světlý a tmavý režim, responzivní rozložení
