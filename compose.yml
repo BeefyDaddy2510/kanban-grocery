@@ -1,0 +1,15 @@
+services:
+  kanban-grocery:
+    image: ghcr.io/beefydaddy2510/kanban-grocery:latest
+    container_name: kanban-grocery
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - /opt/kanban-grocery/config:/config
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s

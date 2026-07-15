@@ -1,0 +1,74 @@
+export type Currency = 'CZK' | 'EUR'
+export type Unit = 'ks' | 'kg' | 'g' | 'l' | 'ml' | 'bal.'
+
+export interface PantryItem {
+  id: string
+  name: string
+  category: string
+  location: 'Spíž' | 'Lednice' | 'Koupelna' | 'Drogerie'
+  quantity: number
+  minimum: number
+  unit: Unit
+  priceCzk: number
+  purchasedAt: string
+  expiresAt?: string
+  barcode?: string
+}
+
+export interface FreezerItem {
+  id: string
+  name: string
+  category: string
+  quantity: number
+  unit: Unit
+  frozenAt: string
+  recommendedMonths: number
+  note?: string
+}
+
+export interface ShoppingItem {
+  id: string
+  name: string
+  quantity: number
+  unit: Unit
+  checked: boolean
+  priceCzk?: number
+  addToPantry: boolean
+  kanbanMinimum?: number
+}
+
+export interface ShoppingList {
+  id: string
+  name: string
+  type: string
+  color: string
+  items: ShoppingItem[]
+}
+
+export interface Recipe {
+  id: string
+  name: string
+  emoji: string
+  minutes: number
+  servings: number
+  tags: string[]
+  ingredients: { name: string; amount: string }[]
+  instructions: string
+  favorite: boolean
+}
+
+export interface Todo {
+  id: string
+  title: string
+  date: string
+  done: boolean
+  category: 'Domácnost' | 'Nákup' | 'Rodina' | 'Jiné'
+}
+
+export interface AppData {
+  pantry: PantryItem[]
+  freezer: FreezerItem[]
+  shoppingLists: ShoppingList[]
+  recipes: Recipe[]
+  todos: Todo[]
+}
