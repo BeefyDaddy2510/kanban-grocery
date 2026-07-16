@@ -1,6 +1,8 @@
 # Grocy Homie
 
-Moderní domácí správce zásob inspirovaný aplikací Grocy. První verze funguje bez účtu a serveru — data se ukládají přímo do prohlížeče.
+Grocy Homie je moderní webová aplikace pro přehlednou správu domácích zásob, mrazáku, nákupních seznamů, receptů a úkolů. Na jednom místě hlídá množství i expirace, pomáhá plánovat nákupy a podporuje skenování EAN/QR kódů.
+
+Projekt je inspirovaný aplikací Grocy a v současné MVP verzi funguje bez účtu i serveru. Veškerá data zůstávají uložená přímo v prohlížeči, takže aplikaci lze rychle spustit lokálně, v Dockeru nebo jako Home Assistant App.
 
 ## Co je hotové
 
