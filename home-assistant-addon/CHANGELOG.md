@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+
+- Kompletní uživatelské rozhraní v češtině, angličtině a němčině.
+- Rychlé přepínání jazyka přímo v záhlaví aplikace.
+- Nastavení výchozího jazyka s uložením mezi návštěvami.
+- Lokalizované formátování data, čísel a měn.
+
 ## 1.1.0
 
 - Editace existujících receptů.
