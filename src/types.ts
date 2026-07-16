@@ -40,6 +40,33 @@ export interface PantryItem {
     fiber: number
   }
   portionGrams?: number
+  productId?: string
+}
+
+export interface NutritionPer100g {
+  kcal: number
+  carbs: number
+  fat: number
+  protein: number
+  fiber: number
+}
+
+export interface FoodProduct {
+  id: string
+  name: string
+  ean: string
+  image: string
+  nutritionPer100g: NutritionPer100g
+  packageGrams: number
+  category?: string
+  brand?: string
+  stores?: string
+  eshopUrl?: string
+  priceCzk?: number
+  notes?: string
+  source?: 'local' | 'open-food-facts'
+  createdAt: string
+  updatedAt: string
 }
 
 export interface FreezerItem {
@@ -51,6 +78,9 @@ export interface FreezerItem {
   frozenAt: string
   recommendedMonths: number
   note?: string
+  productId?: string
+  barcode?: string
+  image?: string
 }
 
 export interface ShoppingItem {
@@ -62,6 +92,9 @@ export interface ShoppingItem {
   priceCzk?: number
   addToPantry: boolean
   kanbanMinimum?: number
+  productId?: string
+  barcode?: string
+  image?: string
 }
 
 export interface ShoppingList {
@@ -94,6 +127,7 @@ export interface Todo {
 }
 
 export interface AppData {
+  products: FoodProduct[]
   pantry: PantryItem[]
   freezer: FreezerItem[]
   shoppingLists: ShoppingList[]

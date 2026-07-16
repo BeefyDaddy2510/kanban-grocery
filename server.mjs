@@ -5,6 +5,8 @@ import { pathToFileURL } from 'node:url'
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024
 const EMPTY_STATE = Object.freeze({ state: null, revision: 0, updatedAt: null })
+const PRODUCT_CACHE_TTL = 24 * 60 * 60 * 1000
+const PRODUCT_NOT_FOUND_TTL = 60 * 60 * 1000
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -16,6 +18,7 @@ const MIME_TYPES = {
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
+  '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.webp': 'image/webp',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
@@ -58,10 +61,75 @@ async function readBody(request) {
 export function createAppServer({
   dataDir = process.env.DATA_DIR || '/data',
   staticDir = process.env.STATIC_DIR || resolve('dist'),
+  fetchImpl = globalThis.fetch,
 } = {}) {
   const stateFile = join(dataDir, 'grocy-homie-state.json')
   const staticRoot = resolve(staticDir)
   let writeQueue = Promise.resolve()
+  const productCache = new Map()
+
+  function packageWeight(product) {
+    const amount = Number(product.product_quantity)
+    const unit = String(product.product_quantity_unit || '').toLowerCase()
+    if (Number.isFinite(amount) && amount > 0) {
+      if (unit === 'kg') return Math.round(amount * 1000)
+      if (!unit || unit === 'g') return Math.round(amount)
+    }
+    const quantity = String(product.quantity || '')
+    const match = quantity.match(/([\d.,]+)\s*(kg|g)\b/i)
+    if (!match) return 0
+    const parsed = Number(match[1].replace(',', '.'))
+    return Number.isFinite(parsed) ? Math.round(parsed * (match[2].toLowerCase() === 'kg' ? 1000 : 1)) : 0
+  }
+
+  function numeric(value) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+
+  async function lookupProduct(ean) {
+    const cached = productCache.get(ean)
+    if (cached && cached.expiresAt > Date.now()) return cached.value
+    const fields = [
+      'code', 'product_name', 'generic_name', 'brands', 'quantity', 'product_quantity',
+      'product_quantity_unit', 'image_front_url', 'image_front_small_url', 'nutriments',
+      'stores', 'purchase_places', 'categories_tags',
+    ].join(',')
+    const response = await fetchImpl(`https://world.openfoodfacts.org/api/v2/product/${ean}.json?fields=${encodeURIComponent(fields)}`, {
+      headers: { 'User-Agent': 'Grocy-Homie/1.4 (https://github.com/BeefyDaddy2510/kanban-grocery)' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!response.ok) {
+      const error = new Error(`Open Food Facts returned ${response.status}`)
+      error.status = 502
+      throw error
+    }
+    const payload = await response.json()
+    const product = payload?.product
+    const found = payload?.status === 1 && isObject(product)
+    const value = found ? {
+      found: true,
+      source: 'open-food-facts',
+      product: {
+        ean: String(product.code || ean),
+        name: String(product.product_name || product.generic_name || product.brands || '').trim(),
+        brand: String(product.brands || '').trim(),
+        image: String(product.image_front_url || product.image_front_small_url || ''),
+        packageGrams: packageWeight(product),
+        nutritionPer100g: {
+          kcal: numeric(product.nutriments?.['energy-kcal_100g']) || numeric(product.nutriments?.energy_100g) / 4.184,
+          carbs: numeric(product.nutriments?.carbohydrates_100g),
+          fat: numeric(product.nutriments?.fat_100g),
+          protein: numeric(product.nutriments?.proteins_100g),
+          fiber: numeric(product.nutriments?.fiber_100g),
+        },
+        stores: [product.stores, product.purchase_places].filter(Boolean).join(', '),
+        category: Array.isArray(product.categories_tags) ? String(product.categories_tags[0] || '').replace(/^[a-z]{2}:/, '').replaceAll('-', ' ') : '',
+      },
+    } : { found: false, source: 'open-food-facts' }
+    productCache.set(ean, { value, expiresAt: Date.now() + (found ? PRODUCT_CACHE_TTL : PRODUCT_NOT_FOUND_TTL) })
+    return value
+  }
 
   async function readStoredState() {
     try {
@@ -162,6 +230,21 @@ export function createAppServer({
         }
 
         response.writeHead(405, { Allow: 'GET, PUT' }).end()
+        return
+      }
+
+      const productMatch = pathname.match(/\/api\/products\/(\d+)$/)
+      if (productMatch) {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        const ean = productMatch[1]
+        if (ean.length < 8 || ean.length > 14) {
+          sendJson(response, 400, { error: 'EAN must contain 8 to 14 digits' })
+          return
+        }
+        sendJson(response, 200, await lookupProduct(ean))
         return
       }
 

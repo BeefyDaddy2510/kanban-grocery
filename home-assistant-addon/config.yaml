@@ -1,5 +1,5 @@
 name: Grocy Homie
-version: "1.3.0"
+version: "1.4.0"
 slug: grocy_homie
 description: Moderní správa domácích zásob, nákupů, receptů a úkolů.
 url: https://github.com/BeefyDaddy2510/kanban-grocery
@@ -11,7 +11,7 @@ backup: cold
 ingress: true
 ingress_port: 8080
 panel_title: Grocy Homie
-panel_icon: mdi:food-apple-outline
+panel_icon: mdi:basket-fill
 panel_admin: false
 image: ghcr.io/beefydaddy2510/kanban-grocery
 legacy: true

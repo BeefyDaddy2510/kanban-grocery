@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.4.0
+
+- Nová databáze potravin s EAN, fotografií, gramáží balení a nutričními hodnotami.
+- Globální SCAN s dohledáním produktu v domácím katalogu nebo Open Food Facts.
+- Přidání naskenované potraviny do zásob, mrazáku nebo nákupního seznamu včetně množství.
+- Ukládání produktů do katalogu při ručním přidání do zásob a nákupního seznamu.
+- Nová barevná ikona a logo Grocy Homie pro web i Home Assistant.
+- Jeden verzovaný multiarch image pro standardní Docker deployment i Home Assistant.
+
 ## 1.3.0
 
 - Centrální persistentní úložiště v Home Assistantu dostupné ze všech zařízení.

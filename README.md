@@ -1,5 +1,9 @@
 # Grocy Homie
 
+<p align="center">
+  <img src="public/app-icon.png" alt="Grocy Homie — košík se zeleninou" width="160" height="160">
+</p>
+
 Grocy Homie je moderní webová aplikace pro přehlednou správu domácích zásob, mrazáku, nákupních seznamů, receptů a úkolů. Na jednom místě hlídá množství i expirace, pomáhá plánovat nákupy a podporuje skenování EAN/QR kódů.
 
 Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Dockeru a Home Assistant App ukládá data do vlastního persistentního úložiště, takže všechna zařízení používají stejnou domácnost.
@@ -23,6 +27,9 @@ Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Do
 - světlý a tmavý režim, responzivní rozložení
 - nastavení názvu domácnosti, systémového/světlého/tmavého režimu, akcentní barvy včetně color pickeru a výchozích hodnot zásob
 - centrální uložení a synchronizace všech změn
+- vlastní databáze potravin s EAN, fotografií, gramáží balení, nutričními hodnotami, obchody, cenou, e-shopem a poznámkami
+- globální tlačítko **SCAN** s volbou přidání naskenované potraviny do zásob, mrazáku nebo nákupního seznamu
+- automatické dohledání neznámého EAN ve veřejné databázi Open Food Facts; domácí katalog má vždy přednost
 
 ## Spuštění
 
@@ -44,6 +51,8 @@ Image se při každém pushi do větve `main` automaticky sestaví pro `amd64` i
 ```text
 ghcr.io/beefydaddy2510/kanban-grocery:latest
 ```
+
+Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.4.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
 
 V Portaineru otevřete **Stacks → Add stack → Web editor** a vložte:
 
@@ -99,4 +108,4 @@ Kurz EUR/CZK se načítá z denního referenčního kurzu [Evropské centrální
 
 ## Další produkční fáze
 
-Pro oddělené domácnosti a pokročilá oprávnění bude potřeba doplnit uživatelské účty. Tok skenování je v MVP připravený v rozhraní; skutečné párování produktů vyžaduje produktový katalog (např. Open Food Facts). Poté dává smysl doplnit historii spotřeby, opakované úkoly a automatické návrhy nákupu.
+Pro oddělené domácnosti a pokročilá oprávnění bude potřeba doplnit uživatelské účty. Dále dává smysl doplnit historii spotřeby, opakované úkoly, automatické návrhy nákupu a volitelný příspěvek nových produktů zpět do Open Food Facts.

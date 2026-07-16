@@ -4,13 +4,14 @@ import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
   ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, ScanLine, Search, ShoppingBasket,
-  Settings, Snowflake, Sparkles, Sun, Trash2, X,
+  QrCode, Settings, Snowflake, Sun, Trash2, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
 import { languages, useI18n, type Language } from './i18n'
-import type { AccentColor, AppData, Currency, FreezerItem, PantryItem, Recipe, ShoppingItem, SiteSettings, Todo, Unit } from './types'
+import { ProductCatalogPage, ProductEditorDialog, ProductScanResultDialog, toFoodProduct, type ProductAction, type ProductDraft } from './products'
+import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, PantryItem, Recipe, ShoppingItem, SiteSettings, Todo, Unit } from './types'
 
-type Page = 'dashboard' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
+type Page = 'dashboard' | 'products' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
 type SyncStatus = 'loading' | 'saving' | 'synced' | 'error'
 type CentralStateEnvelope = {
@@ -22,6 +23,8 @@ type CentralStateEnvelope = {
 const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const STATE_API_URL = new URL('api/state', document.baseURI).toString()
+const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
+const normalizeData = (value: AppData): AppData => ({ ...value, products: Array.isArray(value.products) ? value.products : [] })
 const defaultSettings: SiteSettings = {
   householdName: 'Domácnost Novákových', language: 'cs', theme: 'system', accent: 'coral', customAccent: '', defaultCurrency: 'CZK',
   categories: ['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', 'Ostatní'],
@@ -34,7 +37,7 @@ const accentColors: Record<AccentColor, { labelKey: string; value: string; dark:
   plum: { labelKey: 'accent.plum', value: '#8a668f', dark: '#6e5073' },
 }
 const NAV: { page: Page; labelKey: string; icon: typeof Package }[] = [
-  { page: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard }, { page: 'pantry', labelKey: 'nav.pantry', icon: Package },
+  { page: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard }, { page: 'products', labelKey: 'nav.products', icon: Archive }, { page: 'pantry', labelKey: 'nav.pantry', icon: Package },
   { page: 'freezer', labelKey: 'nav.freezer', icon: Snowflake }, { page: 'shopping', labelKey: 'nav.shopping', icon: ShoppingBasket },
   { page: 'recipes', labelKey: 'nav.recipes', icon: ChefHat }, { page: 'todos', labelKey: 'nav.todos', icon: ListChecks }, { page: 'settings', labelKey: 'nav.settings', icon: Settings },
 ]
@@ -87,7 +90,7 @@ function App() {
   const { language, locale, setLanguage, t } = useI18n()
   const [page, setPage] = useState<Page>('dashboard')
   const [data, setData] = useState<AppData>(() => {
-    try { return JSON.parse(localStorage.getItem(STORE_KEY) || '') as AppData } catch { return initialData }
+    try { return normalizeData(JSON.parse(localStorage.getItem(STORE_KEY) || '') as AppData) } catch { return initialData }
   })
   const [settings, setSettings] = useState<SiteSettings>(() => {
     try {
@@ -104,6 +107,8 @@ function App() {
   const [modal, setModal] = useState<ModalKind>(null)
   const [editingPantry, setEditingPantry] = useState<PantryItem | null>(null)
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null)
+  const [productEditor, setProductEditor] = useState<FoodProduct | 'new' | null>(null)
+  const [scannedEan, setScannedEan] = useState('')
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -129,7 +134,7 @@ function App() {
             locations: remote.state.settings.locations?.length ? remote.state.settings.locations : defaultSettings.locations,
           }
           skipNextSaveRef.current = true
-          setData(remote.state.data)
+          setData(normalizeData(remote.state.data))
           setSettings(remoteSettings)
           setLanguage(remoteSettings.language)
           setCurrency(remoteSettings.defaultCurrency)
@@ -211,7 +216,7 @@ function App() {
           const remoteSettings = { ...defaultSettings, ...remote.state.settings }
           skipNextSaveRef.current = true
           revisionRef.current = remote.revision
-          setData(remote.state.data)
+          setData(normalizeData(remote.state.data))
           setSettings(remoteSettings)
           setLanguage(remoteSettings.language)
           setCurrency(remoteSettings.defaultCurrency)
@@ -269,9 +274,39 @@ function App() {
   const notify = (text: string) => setToast(text)
   const go = (target: Page) => { setPage(target); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const closeModal = () => { setModal(null); setEditingPantry(null); setEditingRecipe(null) }
+  const saveProduct = (draft: ProductDraft, existing?: FoodProduct) => {
+    const product = toFoodProduct(draft, existing ?? data.products.find(item => item.ean === draft.ean))
+    setData(current => ({ ...current, products: current.products.some(item => item.id === product.id) ? current.products.map(item => item.id === product.id ? product : item) : [product, ...current.products.filter(item => item.ean !== product.ean)] }))
+    setProductEditor(null)
+    notify(existing ? 'Potravina byla upravena.' : 'Potravina byla uložena do databáze.')
+  }
+  const productAction = (action: ProductAction) => {
+    const existing = data.products.find(item => item.ean === action.product.ean)
+    const stored = existing ? toFoodProduct(action.product, existing) : toFoodProduct(action.product)
+    const productId = existing?.id ?? (action.saveToCatalog ? stored.id : undefined)
+    setData(current => {
+      const next: AppData = { ...current }
+      if (action.saveToCatalog) next.products = current.products.some(item => item.ean === stored.ean) ? current.products.map(item => item.ean === stored.ean ? stored : item) : [stored, ...current.products]
+      if (action.destination === 'pantry') {
+        const item: PantryItem = { id: uid(), name: action.product.name, category: action.product.category || settings.defaultCategory, location: action.location || settings.defaultLocation, quantity: action.quantity, minimum: settings.defaultMinimum, unit: action.unit, priceCzk: action.product.priceCzk || 0, purchasedAt: today(), barcode: action.product.ean, image: action.product.image, nutritionPer100g: action.product.nutritionPer100g, portionGrams: action.product.packageGrams || 100, productId }
+        next.pantry = [item, ...current.pantry]
+      } else if (action.destination === 'freezer') {
+        const guide = freezerGuide.find(item => item.category === action.product.category)
+        const item: FreezerItem = { id: uid(), name: action.product.name, category: action.product.category || 'Ostatní', quantity: action.quantity, unit: action.unit, frozenAt: today(), recommendedMonths: guide?.max ?? 6, productId, barcode: action.product.ean, image: action.product.image }
+        next.freezer = [item, ...current.freezer]
+      } else {
+        const item: ShoppingItem = { id: uid(), name: action.product.name, quantity: action.quantity, unit: action.unit, checked: false, priceCzk: action.product.priceCzk || undefined, addToPantry: true, kanbanMinimum: settings.defaultMinimum, productId, barcode: action.product.ean, image: action.product.image }
+        next.shoppingLists = current.shoppingLists.map(list => list.id === action.listId ? { ...list, items: [...list.items, item] } : list)
+      }
+      return next
+    })
+    setScannedEan('')
+    notify(action.destination === 'pantry' ? 'Potravina byla přidána do zásob.' : action.destination === 'freezer' ? 'Potravina byla přidána do mrazáku.' : 'Potravina byla přidána na nákupní seznam.')
+  }
 
   const pageContent: Record<Page, ReactNode> = {
     dashboard: <Dashboard data={data} lowItems={lowItems} expiringItems={expiringItems} freezerWarnings={freezerWarnings} pendingShopping={pendingShopping} inventoryValue={inventoryValue} money={money} go={go} updatePantry={updatePantry} toggleTodo={toggleTodo} />,
+    products: <ProductCatalogPage products={data.products} onAdd={() => setProductEditor('new')} onEdit={setProductEditor} onDelete={id => setData(current => ({ ...current, products: current.products.filter(product => product.id !== id) }))} onUse={product => setScannedEan(product.ean)} onScan={() => setModal('scanner')} />,
     pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
     shopping: <Shopping data={data} setData={setData} money={money} open={setModal} notify={notify} />,
@@ -283,18 +318,20 @@ function App() {
   return <div className="app-shell">
     <aside className={`sidebar ${mobileNav ? 'is-open' : ''}`}>
       <button className="mobile-close icon-btn" onClick={() => setMobileNav(false)} aria-label={t('app.closeMenu')}><X size={20} /></button>
-      <button className="brand" onClick={() => go('dashboard')}><span className="brand-mark"><Sparkles size={20} /></span><span>Grocy Homie<small>{t('brand.tagline')}</small></span></button>
+      <button className="brand" onClick={() => go('dashboard')}><span className="brand-mark"><img src={APP_ICON_URL} alt="" /></span><span>Grocy Homie<small>{t('brand.tagline')}</small></span></button>
       <nav>{NAV.map(({ page: target, labelKey, icon: Icon }) => <button key={target} className={page === target ? 'active' : ''} onClick={() => go(target)}><Icon size={19} /><span>{t(labelKey)}</span>{target === 'pantry' && lowItems.length > 0 && <b>{lowItems.length}</b>}</button>)}</nav>
       <div className="sidebar-card"><div className="sidebar-card-icon"><Archive size={18} /></div><div><strong>{t('common.items', { count: data.pantry.length + data.freezer.length })}</strong><span>{t('app.householdItems')}</span></div></div>
       <div className="sidebar-foot"><button className="currency-toggle" onClick={() => setCurrency(currency === 'CZK' ? 'EUR' : 'CZK')}><Euro size={17} /><span>{currency}</span><small>1 EUR = {rate.toFixed(3)} Kč</small></button><button className="icon-btn" onClick={() => setSettings(s => ({ ...s, theme: dark ? 'light' : 'dark' }))} aria-label={t('app.switchTheme')}>{dark ? <Sun size={19} /> : <Moon size={19} />}</button></div>
     </aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} />}
     <main>
-      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{t(NAV.find(item => item.page === page)?.labelKey ?? 'nav.dashboard')}</h1></div><div className="top-actions"><span className={`sync-status ${syncStatus}`} title={t(`sync.${syncStatus}`)}><i />{t(`sync.${syncStatus}`)}</span><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>{t('common.search')}</span><kbd>⌘ K</kbd></button><button className="language-toggle" onClick={cycleLanguage} aria-label={t('app.changeLanguage')} title={t('app.changeLanguage')}>{languages.find(item => item.value === language)?.short}</button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
+      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{t(NAV.find(item => item.page === page)?.labelKey ?? 'nav.dashboard')}</h1></div><div className="top-actions"><span className={`sync-status ${syncStatus}`} title={t(`sync.${syncStatus}`)}><i />{t(`sync.${syncStatus}`)}</span><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>{t('common.search')}</span><kbd>⌘ K</kbd></button><button className="top-scan-button" onClick={() => setModal('scanner')}><QrCode size={18} /><span>SCAN</span></button><button className="language-toggle" onClick={cycleLanguage} aria-label={t('app.changeLanguage')} title={t('app.changeLanguage')}>{languages.find(item => item.value === language)?.short}</button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
       <div className="page-content">{pageContent[page]}</div>
       <footer>Grocy Homie · {t('app.ecbRate', { date: rateDate })} · {t('app.localData')}</footer>
     </main>
-    {modal && <Modal kind={modal} close={closeModal} data={data} setData={setData} notify={notify} settings={settings} editingPantry={editingPantry} editingRecipe={editingRecipe} />}
+    {modal && <Modal kind={modal} close={closeModal} data={data} setData={setData} notify={notify} settings={settings} editingPantry={editingPantry} editingRecipe={editingRecipe} onScanned={code => { const ean = code.replace(/\D/g, ''); if (ean.length < 8 || ean.length > 14) { notify('Naskenovaný kód není platný EAN/GTIN.'); return } setScannedEan(ean); closeModal() }} />}
+    {productEditor && <ProductEditorDialog initial={productEditor === 'new' ? undefined : productEditor} close={() => setProductEditor(null)} save={saveProduct} />}
+    {scannedEan && <ProductScanResultDialog ean={scannedEan} products={data.products} settings={settings} shoppingLists={data.shoppingLists} close={() => setScannedEan('')} confirm={productAction} />}
     {searchOpen && <GlobalSearch data={data} close={() => setSearchOpen(false)} go={target => { setSearchOpen(false); go(target) }} />}
     {toast && <div className="toast"><CheckCircle2 size={19} />{toast}</div>}
   </div>
@@ -306,6 +343,7 @@ function GlobalSearch({ data, close, go }: { data: AppData; close: () => void; g
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   const results = useMemo(() => {
     const all: { id: string; page: Page; title: string; meta: string; search: string }[] = [
+      ...data.products.map(product => ({ id: `db-${product.id}`, page: 'products' as Page, title: product.name, meta: `${product.brand || 'Databáze potravin'} · EAN ${product.ean}`, search: [product.name, product.brand, product.ean, product.category, product.stores].join(' ') })),
       ...data.pantry.map(item => ({ id: `p-${item.id}`, page: 'pantry' as Page, title: item.name, meta: `${item.category} · ${item.location} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.location, item.barcode].join(' ') })),
       ...data.freezer.map(item => ({ id: `f-${item.id}`, page: 'freezer' as Page, title: item.name, meta: `${item.category} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.note].join(' ') })),
       ...data.shoppingLists.flatMap(list => list.items.map(item => ({ id: `s-${list.id}-${item.id}`, page: 'shopping' as Page, title: item.name, meta: `${list.name} · ${list.type}${list.archived ? ` · ${t('search.archive')}` : ''}`, search: [item.name, list.name, list.type].join(' ') }))),
@@ -428,7 +466,7 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
   }
   const finish = () => {
     const purchased = checkedItems.filter(item => finishSelection.has(item.id))
-    setData(p => ({ ...p, pantry: [...p.pantry, ...purchased.map<PantryItem>(i => ({ id: uid(), name: i.name, category: 'Z nákupu', location: 'Spíž', quantity: i.quantity, minimum: i.kanbanMinimum ?? 0, unit: i.unit, priceCzk: i.priceCzk ?? 0, purchasedAt: today() }))], shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, items: l.items.filter(i => !i.checked) } : l) }))
+    setData(p => ({ ...p, pantry: [...p.pantry, ...purchased.map<PantryItem>(i => { const product = p.products.find(candidate => candidate.id === i.productId); return { id: uid(), name: i.name, category: product?.category || 'Z nákupu', location: 'Spíž', quantity: i.quantity, minimum: i.kanbanMinimum ?? 0, unit: i.unit, priceCzk: i.priceCzk ?? product?.priceCzk ?? 0, purchasedAt: today(), productId: product?.id, barcode: i.barcode || product?.ean, image: i.image || product?.image, nutritionPer100g: product?.nutritionPer100g, portionGrams: product?.packageGrams } })], shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, items: l.items.filter(i => !i.checked) } : l) }))
     setFinishOpen(false)
     notify(purchased.length === 1 ? t('shopping.finishedOne') : t('shopping.finishedMany', { count: purchased.length }))
   }
@@ -487,15 +525,22 @@ function Todos({ data, setData, toggle, open }: { data: AppData; setData: React.
   </>
 }
 
-function Modal({ kind, close, data, setData, notify, settings, editingPantry, editingRecipe }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; settings: SiteSettings; editingPantry: PantryItem | null; editingRecipe: Recipe | null }) {
+function Modal({ kind, close, data, setData, notify, settings, editingPantry, editingRecipe, onScanned }: { kind: Exclude<ModalKind, null>; close: () => void; data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; notify: (s: string) => void; settings: SiteSettings; editingPantry: PantryItem | null; editingRecipe: Recipe | null; onScanned: (code: string) => void }) {
   const { locale, t } = useI18n()
   const [scannerOpen, setScannerOpen] = useState(false)
   const [barcode, setBarcode] = useState(editingPantry?.barcode ?? '')
   const [image, setImage] = useState<string | undefined>(editingPantry?.image?.startsWith('http') ? undefined : editingPantry?.image)
   const [imageUrl, setImageUrl] = useState(editingPantry?.image?.startsWith('http') ? editingPantry.image : '')
   const [imageError, setImageError] = useState('')
+  const [catalogError, setCatalogError] = useState('')
   const [pantryName, setPantryName] = useState(editingPantry?.name ?? '')
+  const [shoppingName, setShoppingName] = useState('')
   const [portionGrams, setPortionGrams] = useState(String(editingPantry?.portionGrams ?? 100))
+  const [saveToCatalog, setSaveToCatalog] = useState(Boolean(editingPantry?.productId))
+  const [packageGrams, setPackageGrams] = useState(String(editingPantry?.portionGrams ?? ''))
+  const [productStores, setProductStores] = useState('')
+  const [productEshopUrl, setProductEshopUrl] = useState('')
+  const [productNotes, setProductNotes] = useState('')
   const [nutrition, setNutrition] = useState<NutritionInput>({
     kcal: String(editingPantry?.nutritionPer100g?.kcal ?? ''), carbs: String(editingPantry?.nutritionPer100g?.carbs ?? ''),
     fat: String(editingPantry?.nutritionPer100g?.fat ?? ''), protein: String(editingPantry?.nutritionPer100g?.protein ?? ''), fiber: String(editingPantry?.nutritionPer100g?.fiber ?? ''),
@@ -510,17 +555,29 @@ function Modal({ kind, close, data, setData, notify, settings, editingPantry, ed
   }
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const f = new FormData(e.currentTarget)
+    const productName = kind === 'shopping' ? shoppingName : pantryName
+    const hasCompleteCatalogData = Boolean(productName.trim() && barcode && imageSource && Number(packageGrams) > 0 && nutrition.kcal !== '' && nutrition.carbs !== '' && nutrition.fat !== '' && nutrition.protein !== '')
+    if ((kind === 'pantry' || kind === 'shopping') && saveToCatalog && !hasCompleteCatalogData) {
+      setCatalogError('Pro uložení do databáze doplňte EAN, fotografii, gramáž balení a kcal, sacharidy, tuky a proteiny na 100 g.')
+      return
+    }
+    const catalogDraft: ProductDraft | undefined = saveToCatalog ? { name: productName.trim(), ean: barcode, image: imageSource || '', packageGrams: Number(packageGrams), nutritionPer100g: { kcal: Number(nutrition.kcal), carbs: Number(nutrition.carbs), fat: Number(nutrition.fat), protein: Number(nutrition.protein), fiber: Number(nutrition.fiber) || 0 }, category: String(f.get('category') || ''), stores: productStores, eshopUrl: productEshopUrl, notes: productNotes, priceCzk: Number(f.get('price')) || 0, source: 'local' } : undefined
     if (kind === 'pantry') {
       const hasNutrition = Object.values(nutrition).some(value => value !== '')
-      const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image, nutritionPer100g: hasNutrition ? { kcal: Number(nutrition.kcal) || 0, carbs: Number(nutrition.carbs) || 0, fat: Number(nutrition.fat) || 0, protein: Number(nutrition.protein) || 0, fiber: Number(nutrition.fiber) || 0 } : undefined, portionGrams: hasNutrition ? Math.max(0, Number(portionGrams) || 0) : undefined }
-      setData(p => ({ ...p, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? t('modal.itemUpdated') : t('modal.itemPantryAdded'))
+      const existingProduct = catalogDraft ? data.products.find(product => product.ean === catalogDraft.ean) : undefined
+      const storedProduct = catalogDraft ? toFoodProduct(catalogDraft, existingProduct) : undefined
+      const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image, nutritionPer100g: hasNutrition ? { kcal: Number(nutrition.kcal) || 0, carbs: Number(nutrition.carbs) || 0, fat: Number(nutrition.fat) || 0, protein: Number(nutrition.protein) || 0, fiber: Number(nutrition.fiber) || 0 } : undefined, portionGrams: hasNutrition ? Math.max(0, Number(portionGrams) || 0) : undefined, productId: storedProduct?.id ?? editingPantry?.productId }
+      setData(p => ({ ...p, products: storedProduct ? (p.products.some(product => product.ean === storedProduct.ean) ? p.products.map(product => product.ean === storedProduct.ean ? storedProduct : product) : [storedProduct, ...p.products]) : p.products, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? t('modal.itemUpdated') : t('modal.itemPantryAdded'))
     } else if (kind === 'freezer') {
       const category = String(f.get('category')); const guide = freezerGuide.find(g => g.category === category)
       const item: FreezerItem = { id: uid(), name: String(f.get('name')), category, quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, frozenAt: String(f.get('frozenAt')), recommendedMonths: guide?.max ?? Number(f.get('months')) ?? 6, note: String(f.get('note')) || undefined }
       setData(p => ({ ...p, freezer: [item, ...p.freezer] })); notify(t('modal.itemFreezerAdded'))
     } else if (kind === 'shopping') {
-      const listId = String(f.get('list')); const item: ShoppingItem = { id: uid(), name: String(f.get('name')), quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, checked: false, priceCzk: Number(f.get('price')) || undefined, addToPantry: f.get('addToPantry') === 'on', kanbanMinimum: Number(f.get('minimum')) || undefined }
-      setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === listId ? { ...l, items: [...l.items, item] } : l) })); notify(t('modal.itemShoppingAdded'))
+      const listId = String(f.get('list'))
+      const existingProduct = catalogDraft ? data.products.find(product => product.ean === catalogDraft.ean) : undefined
+      const storedProduct = catalogDraft ? toFoodProduct(catalogDraft, existingProduct) : undefined
+      const item: ShoppingItem = { id: uid(), name: String(f.get('name')), quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, checked: false, priceCzk: Number(f.get('price')) || undefined, addToPantry: f.get('addToPantry') === 'on', kanbanMinimum: Number(f.get('minimum')) || undefined, productId: storedProduct?.id, barcode: barcode || undefined, image: imageSource || undefined }
+      setData(p => ({ ...p, products: storedProduct ? (p.products.some(product => product.ean === storedProduct.ean) ? p.products.map(product => product.ean === storedProduct.ean ? storedProduct : product) : [storedProduct, ...p.products]) : p.products, shoppingLists: p.shoppingLists.map(l => l.id === listId ? { ...l, items: [...l.items, item] } : l) })); notify(t('modal.itemShoppingAdded'))
     } else if (kind === 'todo') {
       const task: Todo = { id: uid(), title: String(f.get('title')), date: String(f.get('date')), done: false, category: String(f.get('category')) as Todo['category'] }
       setData(p => ({ ...p, todos: [...p.todos, task] })); notify(t('modal.todoAdded'))
@@ -532,13 +589,14 @@ function Modal({ kind, close, data, setData, notify, settings, editingPantry, ed
     close()
   }
   const imageSource = imageUrl.trim() || image
+  const catalogExtras = <section className="catalog-inline-fields"><div className="form-grid"><Field label="Gramáž balení"><div className="number-with-unit"><input type="number" min="1" step="1" value={packageGrams} onChange={event => setPackageGrams(event.target.value)} /><span>g</span></div></Field><Field label="Obchody (volitelně)"><input value={productStores} onChange={event => setProductStores(event.target.value)} placeholder="Albert, Lidl…" /></Field><Field label="Odkaz na e-shop (volitelně)"><input type="url" value={productEshopUrl} onChange={event => setProductEshopUrl(event.target.value)} placeholder="https://…" /></Field><Field label="Poznámka (volitelně)"><input value={productNotes} onChange={event => setProductNotes(event.target.value)} /></Field></div>{catalogError && <p className="catalog-form-error">{catalogError}</p>}</section>
   const titles = { pantry: editingPantry ? t('modal.editItem') : t('modal.addPantry'), freezer: t('modal.addFreezer'), shopping: t('modal.addShopping'), todo: t('modal.newTodo'), scanner: t('modal.scanCode'), recipe: editingRecipe ? t('modal.editRecipe') : t('modal.newRecipe') }
   const isEditing = (kind === 'pantry' && Boolean(editingPantry)) || (kind === 'recipe' && Boolean(editingRecipe))
   return <div className="modal-backdrop" onMouseDown={e => e.target === e.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">Grocy Homie</span><h2>{titles[kind]}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div>
-    {kind === 'scanner' ? <BarcodeScanner onDetected={code => { notify(t('modal.codeScanned', { code })); close() }} /> : <form onSubmit={submit}>
-      {kind === 'pantry' && <><Field label={t('modal.name')}><input name="name" required autoFocus value={pantryName} onChange={event => setPantryName(event.target.value)} placeholder={t('modal.exampleItem')} /></Field><div className="form-grid"><Field label={t('settings.category')}><input name="category" list="pantry-categories" defaultValue={editingPantry?.category ?? settings.defaultCategory} placeholder={t('modal.selectOrType')} /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label={t('settings.location')}><select name="location" defaultValue={editingPantry?.location ?? settings.defaultLocation}>{locations.map(location => <option key={location}>{location}</option>)}</select></Field><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue={editingPantry?.quantity ?? settings.defaultQuantity} required /></Field><Field label={t('settings.unit')}><UnitSelect defaultValue={editingPantry?.unit ?? settings.defaultUnit} /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="0.1" defaultValue={editingPantry?.minimum ?? settings.defaultMinimum} required /></Field><Field label={t('modal.priceCzk')}><input name="price" type="number" min="0" step="0.01" defaultValue={editingPantry?.priceCzk ?? 0} /></Field><Field label={t('modal.purchaseDate')}><input name="purchasedAt" type="date" defaultValue={editingPantry?.purchasedAt ?? today()} required /></Field><Field label={t('modal.expiryOptional')}><input name="expiresAt" type="date" defaultValue={editingPantry?.expiresAt} /></Field></div><NutritionEditor nutrition={nutrition} setNutrition={setNutrition} grams={portionGrams} setGrams={setPortionGrams} foodName={pantryName} /><Field label={t('modal.barcode')}><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value)} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />{t('modal.scan')}</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(t('modal.eanLoaded', { code })) }} onCancel={() => setScannerOpen(false)} compact />}<Field label={t('modal.imageUrl')}><input type="url" value={imageUrl} onChange={event => { setImageUrl(event.target.value); if (event.target.value) setImage(undefined) }} placeholder="https://…/product.jpg" /></Field><Field label={t('modal.photo')}><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{imageSource ? <img src={imageSource} alt={t('modal.productPreview')} /> : <><Plus size={20} /><small>{t('modal.choosePhoto')}</small></>}</span>{imageSource && <span>{t('modal.changePhoto')}</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field></>}
+    {kind === 'scanner' ? <BarcodeScanner onDetected={onScanned} /> : <form onSubmit={submit}>
+      {kind === 'pantry' && <><Field label={t('modal.name')}><input name="name" required autoFocus value={pantryName} onChange={event => setPantryName(event.target.value)} placeholder={t('modal.exampleItem')} /></Field><div className="form-grid"><Field label={t('settings.category')}><input name="category" list="pantry-categories" defaultValue={editingPantry?.category ?? settings.defaultCategory} placeholder={t('modal.selectOrType')} /><datalist id="pantry-categories">{categories.map(category => <option value={category} key={category} />)}</datalist></Field><Field label={t('settings.location')}><select name="location" defaultValue={editingPantry?.location ?? settings.defaultLocation}>{locations.map(location => <option key={location}>{location}</option>)}</select></Field><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue={editingPantry?.quantity ?? settings.defaultQuantity} required /></Field><Field label={t('settings.unit')}><UnitSelect defaultValue={editingPantry?.unit ?? settings.defaultUnit} /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="0.1" defaultValue={editingPantry?.minimum ?? settings.defaultMinimum} required /></Field><Field label={t('modal.priceCzk')}><input name="price" type="number" min="0" step="0.01" defaultValue={editingPantry?.priceCzk ?? 0} /></Field><Field label={t('modal.purchaseDate')}><input name="purchasedAt" type="date" defaultValue={editingPantry?.purchasedAt ?? today()} required /></Field><Field label={t('modal.expiryOptional')}><input name="expiresAt" type="date" defaultValue={editingPantry?.expiresAt} /></Field></div><NutritionEditor nutrition={nutrition} setNutrition={setNutrition} grams={portionGrams} setGrams={setPortionGrams} foodName={pantryName} /><Field label={t('modal.barcode')}><div className="input-with-action"><input value={barcode} onChange={e => setBarcode(e.target.value.replace(/\D/g, '').slice(0, 14))} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />{t('modal.scan')}</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false); notify(t('modal.eanLoaded', { code })) }} onCancel={() => setScannerOpen(false)} compact />}<Field label={t('modal.imageUrl')}><input type="url" value={imageUrl} onChange={event => { setImageUrl(event.target.value); if (event.target.value) setImage(undefined) }} placeholder="https://…/product.jpg" /></Field><Field label={t('modal.photo')}><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={e => chooseImage(e.target.files?.[0])} /><span className="photo-preview">{imageSource ? <img src={imageSource} alt={t('modal.productPreview')} /> : <><Plus size={20} /><small>{t('modal.choosePhoto')}</small></>}</span>{imageSource && <span>{t('modal.changePhoto')}</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field><label className="switch-row catalog-save-switch"><input type="checkbox" checked={saveToCatalog} onChange={event => { setSaveToCatalog(event.target.checked); setCatalogError('') }} /><span />Uložit potravinu také do databáze</label>{saveToCatalog && catalogExtras}</>}
       {kind === 'freezer' && <><Field label={t('modal.name')}><input name="name" required autoFocus placeholder={t('modal.exampleFreezer')} /></Field><Field label={t('modal.freezerCategory')}><select name="category">{freezerGuide.map(g => <option key={g.category}>{g.category}</option>)}</select></Field><div className="form-grid"><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" required /></Field><Field label={t('settings.unit')}><UnitSelect /></Field><Field label={t('modal.freezeDate')}><input name="frozenAt" type="date" defaultValue={today()} required /></Field><Field label={t('modal.note')}><input name="note" placeholder={t('modal.examplePortion')} /></Field></div></>}
-      {kind === 'shopping' && <><Field label={t('modal.list')}><select name="list">{data.shoppingLists.filter(l => !l.archived).map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label={t('modal.name')}><input name="name" required autoFocus placeholder={t('modal.whatBuy')} /></Field><div className="form-grid"><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label={t('settings.unit')}><UnitSelect /></Field><Field label={t('modal.estimatedPrice')}><input name="price" type="number" min="0" step="0.01" /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />{t('modal.addToPantry')}</label></>}
+      {kind === 'shopping' && <><Field label={t('modal.list')}><select name="list">{data.shoppingLists.filter(l => !l.archived).map(l => <option value={l.id} key={l.id}>{l.name} · {l.type}</option>)}</select></Field><Field label={t('modal.name')}><input name="name" required autoFocus value={shoppingName} onChange={event => setShoppingName(event.target.value)} placeholder={t('modal.whatBuy')} /></Field><div className="form-grid"><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue="1" /></Field><Field label={t('settings.unit')}><UnitSelect /></Field><Field label={t('modal.estimatedPrice')}><input name="price" type="number" min="0" step="0.01" /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="1" /></Field></div><label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked /><span />{t('modal.addToPantry')}</label><label className="switch-row catalog-save-switch"><input type="checkbox" checked={saveToCatalog} onChange={event => { setSaveToCatalog(event.target.checked); setCatalogError('') }} /><span />Uložit potravinu také do databáze</label>{saveToCatalog && <><NutritionEditor nutrition={nutrition} setNutrition={setNutrition} grams={portionGrams} setGrams={setPortionGrams} foodName={shoppingName} /><Field label={t('modal.barcode')}><div className="input-with-action"><input value={barcode} onChange={event => setBarcode(event.target.value.replace(/\D/g, '').slice(0, 14))} inputMode="numeric" placeholder="859…" /><button type="button" className="secondary" onClick={() => setScannerOpen(true)}><ScanLine size={17} />{t('modal.scan')}</button></div></Field>{scannerOpen && <BarcodeScanner onDetected={code => { setBarcode(code); setScannerOpen(false) }} onCancel={() => setScannerOpen(false)} compact />}<Field label={t('modal.imageUrl')}><input type="url" value={imageUrl} onChange={event => { setImageUrl(event.target.value); if (event.target.value) setImage(undefined) }} placeholder="https://…/product.jpg" /></Field><Field label={t('modal.photo')}><label className="photo-upload"><input type="file" accept="image/*" capture="environment" onChange={event => chooseImage(event.target.files?.[0])} /><span className="photo-preview">{imageSource ? <img src={imageSource} alt={t('modal.productPreview')} /> : <><Plus size={20} /><small>{t('modal.choosePhoto')}</small></>}</span>{imageSource && <span>{t('modal.changePhoto')}</span>}</label>{imageError && <small className="field-error">{imageError}</small>}</Field>{catalogExtras}</>}</>}
       {kind === 'todo' && <><Field label={t('modal.todoQuestion')}><input name="title" required autoFocus placeholder={t('modal.exampleTodo')} /></Field><div className="form-grid"><Field label={t('modal.date')}><input name="date" type="date" defaultValue={today()} required /></Field><Field label={t('settings.category')}><select name="category"><option value="Domácnost">{t('modal.household')}</option><option value="Nákup">{t('nav.shopping')}</option><option value="Rodina">{t('modal.family')}</option><option value="Jiné">{t('modal.other')}</option></select></Field></div></>}
       {kind === 'recipe' && <><div className="recipe-title-fields"><Field label={t('modal.emoji')}><input name="emoji" defaultValue={editingRecipe?.emoji ?? '🍽️'} maxLength={4} /></Field><Field label={t('modal.recipeName')}><input name="name" required autoFocus defaultValue={editingRecipe?.name} placeholder={t('modal.exampleRecipe')} /></Field></div><div className="form-grid"><Field label={t('modal.minutes')}><input name="minutes" type="number" min="1" defaultValue={editingRecipe?.minutes ?? 30} required /></Field><Field label={t('modal.servings')}><input name="servings" type="number" min="1" defaultValue={editingRecipe?.servings ?? 4} required /></Field></div><Field label={t('modal.tags')}><input name="tags" defaultValue={editingRecipe?.tags.join(', ')} placeholder={t('modal.tagsPlaceholder')} /></Field><RecipeIngredientEditor pantry={data.pantry} ingredients={recipeIngredients} setIngredients={setRecipeIngredients} /><Field label={t('modal.instructions')}><textarea name="instructions" rows={6} required defaultValue={editingRecipe?.instructions} placeholder={t('modal.instructionsPlaceholder')} /></Field></>}
       <div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('common.cancel')}</button><button className="primary" type="submit">{isEditing ? <Pencil size={18} /> : <Plus size={18} />}{isEditing ? t('common.saveChanges') : t('common.add')}</button></div>

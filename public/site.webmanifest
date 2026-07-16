@@ -1,0 +1,17 @@
+{
+  "name": "Grocy Homie",
+  "short_name": "Grocy Homie",
+  "description": "Chytrá správa domácích zásob, nákupů a receptů.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#234a35",
+  "icons": [
+    {
+      "src": "app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

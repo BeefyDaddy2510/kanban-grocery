@@ -20,7 +20,7 @@ USER root
 ENV DATA_DIR=/data \
     STATIC_DIR=/app/dist \
     PORT=8080
-
+VOLUME ["/data"]
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \

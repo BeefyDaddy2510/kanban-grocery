@@ -31,45 +31,24 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract image metadata
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/beefydaddy2510/kanban-grocery
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
 
-      - name: Build and publish
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+      - name: Build and publish Docker / Home Assistant image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
-      - name: Extract Home Assistant image metadata
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        id: ha-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/beefydaddy2510/kanban-grocery
-          tags: |
-            type=semver,pattern={{version}}
-
-      - name: Build and publish Home Assistant App
-        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: home-assistant-addon/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.ha-meta.outputs.tags }}
-          labels: ${{ steps.ha-meta.outputs.labels }}
-          cache-from: type=gha,scope=home-assistant
-          cache-to: type=gha,mode=max,scope=home-assistant

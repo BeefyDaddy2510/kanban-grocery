@@ -72,6 +72,10 @@ Object.assign(messages.de, {
   'nutrition.title':'Nährwerte','nutrition.kcal':'kcal','nutrition.per100':'Werte pro 100 g eingeben','nutrition.catalog':'Kalorientabellen','nutrition.searchFood':'Nach {name} suchen','nutrition.openCatalog':'Lebensmittelkatalog öffnen','nutrition.forAmount':'Für Menge berechnen','nutrition.carbs':'Kohlenhydrate','nutrition.fat':'Fett','nutrition.protein':'Eiweiß','nutrition.fiber':'Ballaststoffe','nutrition.amountAria':'Menge für Nährwertberechnung','error.photoRead':'Das Foto konnte nicht gelesen werden.','error.photoFormat':'Dieses Bildformat kann nicht verwendet werden.',
 })
 
+Object.assign(messages.cs, { 'nav.products': 'Databáze potravin' })
+Object.assign(messages.en, { 'nav.products': 'Food database' })
+Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank' })
+
 type I18nContextValue = {
   language: Language
   locale: string

@@ -48,6 +48,7 @@ test('rejects malformed state writes and serves the SPA', async t => {
   const staticDir = join(root, 'dist')
   await mkdir(staticDir)
   await writeFile(join(staticDir, 'index.html'), '<h1>Grocy Homie</h1>')
+  await writeFile(join(staticDir, 'site.webmanifest'), '{"name":"Grocy Homie"}')
   t.after(() => rm(root, { recursive: true, force: true }))
 
   const app = await startTestServer(join(root, 'data'), staticDir)
@@ -63,4 +64,49 @@ test('rejects malformed state writes and serves the SPA', async t => {
   const page = await fetch(`${app.url}/some/client/route`)
   assert.equal(page.status, 200)
   assert.match(await page.text(), /Grocy Homie/)
+
+  const manifest = await fetch(`${app.url}/site.webmanifest`)
+  assert.match(manifest.headers.get('content-type'), /application\/manifest\+json/)
+})
+
+test('looks up and normalizes a food product by EAN', async t => {
+  let calls = 0
+  const app = createAppServer({
+    dataDir: join(tmpdir(), `grocy-homie-products-${Date.now()}`),
+    staticDir: tmpdir(),
+    fetchImpl: async (_url, options) => {
+      calls += 1
+      assert.match(options.headers['User-Agent'], /Grocy-Homie/)
+      return new Response(JSON.stringify({
+        status: 1,
+        product: {
+          code: '3017620422003', product_name: 'Test product', brands: 'Test brand',
+          product_quantity: 350, product_quantity_unit: 'g', image_front_url: 'https://example.test/product.jpg',
+          stores: 'Test shop', nutriments: { 'energy-kcal_100g': 539, carbohydrates_100g: 57.5, fat_100g: 30.9, proteins_100g: 6.3 },
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    },
+  })
+  await new Promise(resolve => app.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => app.close(resolve)))
+  const { port } = app.address()
+
+  const first = await fetch(`http://127.0.0.1:${port}/api/products/3017620422003`)
+  const product = await first.json()
+  assert.equal(product.found, true)
+  assert.equal(product.product.name, 'Test product')
+  assert.equal(product.product.packageGrams, 350)
+  assert.equal(product.product.nutritionPer100g.kcal, 539)
+
+  await fetch(`http://127.0.0.1:${port}/api/products/3017620422003`)
+  assert.equal(calls, 1, 'product response should be cached')
+})
+
+test('validates EAN before calling Open Food Facts', async t => {
+  const app = createAppServer({ dataDir: tmpdir(), staticDir: tmpdir(), fetchImpl: async () => { throw new Error('should not be called') } })
+  await new Promise(resolve => app.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => app.close(resolve)))
+  const { port } = app.address()
+  const response = await fetch(`http://127.0.0.1:${port}/api/products/123`)
+  assert.equal(response.status, 400)
 })

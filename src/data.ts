@@ -26,6 +26,7 @@ export const freezerGuide = [
 ]
 
 export const initialData: AppData = {
+  products: [],
   pantry: [
     { id: 'p1', name: 'Červené fazole', category: 'Konzervy', location: 'Spíž', quantity: 1, minimum: 2, unit: 'ks', priceCzk: 34.9, purchasedAt: isoDaysFromNow(-14), expiresAt: isoDaysFromNow(240) },
     { id: 'p2', name: 'Těstoviny penne', category: 'Přílohy', location: 'Spíž', quantity: 3, minimum: 2, unit: 'bal.', priceCzk: 39.9, purchasedAt: isoDaysFromNow(-8), expiresAt: isoDaysFromNow(320) },
