@@ -72,9 +72,9 @@ Object.assign(messages.de, {
   'nutrition.title':'Nährwerte','nutrition.kcal':'kcal','nutrition.per100':'Werte pro 100 g eingeben','nutrition.catalog':'Kalorientabellen','nutrition.searchFood':'Nach {name} suchen','nutrition.openCatalog':'Lebensmittelkatalog öffnen','nutrition.forAmount':'Für Menge berechnen','nutrition.carbs':'Kohlenhydrate','nutrition.fat':'Fett','nutrition.protein':'Eiweiß','nutrition.fiber':'Ballaststoffe','nutrition.amountAria':'Menge für Nährwertberechnung','error.photoRead':'Das Foto konnte nicht gelesen werden.','error.photoFormat':'Dieses Bildformat kann nicht verwendet werden.',
 })
 
-Object.assign(messages.cs, { 'nav.products': 'Databáze potravin', 'nav.weight': 'Sledování hmotnosti', 'nutrition.sugars': 'z toho cukry' })
-Object.assign(messages.en, { 'nav.products': 'Food database', 'nav.weight': 'Weight tracking', 'nutrition.sugars': 'of which sugars' })
-Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank', 'nav.weight': 'Gewichtsverfolgung', 'nutrition.sugars': 'davon Zucker' })
+Object.assign(messages.cs, { 'nav.products': 'Databáze potravin', 'nav.weight': 'Hmotnost', 'nutrition.sugars': 'z toho cukry' })
+Object.assign(messages.en, { 'nav.products': 'Food database', 'nav.weight': 'Weight', 'nutrition.sugars': 'of which sugars' })
+Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank', 'nav.weight': 'Gewicht', 'nutrition.sugars': 'davon Zucker' })
 
 type I18nContextValue = {
   language: Language

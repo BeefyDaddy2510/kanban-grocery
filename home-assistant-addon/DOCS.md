@@ -30,6 +30,10 @@ V menu **Sledování hmotnosti** lze vytvořit samostatné karty členů domácn
 
 Jídla lze vybírat z databáze potravin a zásob nebo zapsat ručně. Ručně zadanou potravinu je možné současně uložit do domácí databáze pro další použití. Stejně jako ostatní data jsou osobní karty, vážení a jídelní historie součástí persistentního úložiště a záloh addonu.
 
+Hotový recept lze do vybrané fáze dne přidat podle počtu porcí nebo skutečně zkonzumované hmotnosti. Grocy Homie vypočítá poměrnou část energie a makroživin z hmotností ingrediencí receptu.
+
+Položky denního přehledu lze označit checkboxy. Výběr je možné přesunout mezi snídaní, svačinami, obědem a večeří, zkopírovat 1:1 na libovolné datum nebo z něj vytvořit nový recept včetně hmotností a nutričních údajů.
+
 ## Podpora
 
 Chyby a návrhy hlaste v [GitHub Issues](https://github.com/BeefyDaddy2510/kanban-grocery/issues).

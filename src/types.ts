@@ -104,8 +104,10 @@ export interface MealEntry {
   grams: number
   nutritionPer100g: NutritionPer100g
   productId?: string
+  recipeId?: string
+  portionCount?: number
   image?: string
-  source: 'catalog' | 'manual'
+  source: 'catalog' | 'manual' | 'recipe'
 }
 
 export interface FreezerItem {
@@ -145,6 +147,14 @@ export interface ShoppingList {
   archived?: boolean
 }
 
+export interface RecipeIngredient {
+  name: string
+  amount: string
+  grams?: number
+  productId?: string
+  nutritionPer100g?: NutritionPer100g
+}
+
 export interface Recipe {
   id: string
   name: string
@@ -152,7 +162,7 @@ export interface Recipe {
   minutes: number
   servings: number
   tags: string[]
-  ingredients: { name: string; amount: string }[]
+  ingredients: RecipeIngredient[]
   instructions: string
   favorite: boolean
 }

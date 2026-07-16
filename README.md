@@ -33,6 +33,9 @@ Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Do
 - sledování hmotnosti pro více osob s cílovou váhou, denními cíli a historií vážení
 - trvalý jídelní deník po jednotlivých dnech a jídlech s kruhovým přehledem energie a makroživin
 - přidávání jídel z databáze potravin a zásob nebo ručním zápisem s možností uložit novou potravinu do katalogu
+- přidávání hotových receptů do jídelního dne podle počtu porcí nebo skutečně snědené hmotnosti
+- výběr více položek jídelního dne a vytvoření nového receptu včetně porcí, hmotností a nutričních hodnot
+- přesouvání položek mezi jídly a jejich kopírování 1:1 na libovolné minulé či budoucí datum
 
 ## Spuštění
 
@@ -55,7 +58,7 @@ Image se při každém pushi do větve `main` automaticky sestaví pro `amd64` i
 ghcr.io/beefydaddy2510/kanban-grocery:latest
 ```
 
-Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.5.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
+Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.6.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
 
 V Portaineru otevřete **Stacks → Add stack → Web editor** a vložte:
 

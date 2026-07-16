@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0
+
+- Hotové recepty lze přidávat do jídelního dne podle porce nebo zkonzumované hmotnosti.
+- Z vybraných položek denního jídelníčku lze vytvořit nový recept s porcí a hmotnostmi ingrediencí.
+- Vybrané položky lze přesouvat mezi jídly nebo kopírovat na libovolný minulý či budoucí den.
+- Kompaktní název položky Hmotnost v postranním menu.
+
 ## 1.5.0
 
 - Nutriční údaje nově rozlišují celkové sacharidy a podíl cukrů.
