@@ -35,6 +35,7 @@ export interface PantryItem {
   nutritionPer100g?: {
     kcal: number
     carbs: number
+    sugars: number
     fat: number
     protein: number
     fiber: number
@@ -46,6 +47,7 @@ export interface PantryItem {
 export interface NutritionPer100g {
   kcal: number
   carbs: number
+  sugars: number
   fat: number
   protein: number
   fiber: number
@@ -67,6 +69,43 @@ export interface FoodProduct {
   source?: 'local' | 'open-food-facts'
   createdAt: string
   updatedAt: string
+}
+
+export type Gender = 'female' | 'male' | 'other'
+export type MealType = 'breakfast' | 'morningSnack' | 'lunch' | 'afternoonSnack' | 'dinner'
+
+export interface DailyNutritionTargets extends NutritionPer100g {}
+
+export interface WeightEntry {
+  id: string
+  date: string
+  weightKg: number
+}
+
+export interface WeightProfile {
+  id: string
+  name: string
+  gender: Gender
+  age: number
+  heightCm: number
+  currentWeightKg: number
+  targetWeightKg: number
+  dailyTargets: DailyNutritionTargets
+  weightEntries: WeightEntry[]
+  createdAt: string
+}
+
+export interface MealEntry {
+  id: string
+  profileId: string
+  date: string
+  meal: MealType
+  name: string
+  grams: number
+  nutritionPer100g: NutritionPer100g
+  productId?: string
+  image?: string
+  source: 'catalog' | 'manual'
 }
 
 export interface FreezerItem {
@@ -128,6 +167,8 @@ export interface Todo {
 
 export interface AppData {
   products: FoodProduct[]
+  weightProfiles: WeightProfile[]
+  mealEntries: MealEntry[]
   pantry: PantryItem[]
   freezer: FreezerItem[]
   shoppingLists: ShoppingList[]

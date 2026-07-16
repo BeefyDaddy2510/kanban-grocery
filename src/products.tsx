@@ -15,7 +15,7 @@ export type ProductAction = {
   saveToCatalog: boolean
 }
 
-const emptyNutrition = { kcal: 0, carbs: 0, fat: 0, protein: 0, fiber: 0 }
+const emptyNutrition = { kcal: 0, carbs: 0, sugars: 0, fat: 0, protein: 0, fiber: 0 }
 export const emptyProduct = (ean = ''): ProductDraft => ({
   name: '', ean, image: '', nutritionPer100g: { ...emptyNutrition }, packageGrams: 0,
   category: '', brand: '', stores: '', eshopUrl: '', priceCzk: 0, notes: '', source: 'local',
@@ -51,7 +51,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return <label className="field"><span>{label}</span>{children}</label>
 }
 
-function ProductFields({ product, setProduct, requireComplete = true }: { product: ProductDraft; setProduct: Dispatch<SetStateAction<ProductDraft>>; requireComplete?: boolean }) {
+export function ProductFields({ product, setProduct, requireComplete = true }: { product: ProductDraft; setProduct: Dispatch<SetStateAction<ProductDraft>>; requireComplete?: boolean }) {
   const [imageError, setImageError] = useState('')
   const set = <K extends keyof ProductDraft>(key: K, value: ProductDraft[K]) => setProduct(current => ({ ...current, [key]: value }))
   const setNutrition = (key: keyof ProductDraft['nutritionPer100g'], value: number) => setProduct(current => ({ ...current, nutritionPer100g: { ...current.nutritionPer100g, [key]: value } }))
@@ -63,7 +63,7 @@ function ProductFields({ product, setProduct, requireComplete = true }: { produc
   return <>
     <div className="product-form-lead">
       <Field label="Název potraviny"><input value={product.name} onChange={event => set('name', event.target.value)} required placeholder="např. Řecký jogurt" /></Field>
-      <Field label="EAN / GTIN"><input value={product.ean} onChange={event => set('ean', event.target.value.replace(/\D/g, '').slice(0, 14))} required pattern="\d{8,14}" inputMode="numeric" placeholder="859…" /></Field>
+      <Field label={`EAN / GTIN${requireComplete ? '' : ' (volitelně)'}`}><input value={product.ean} onChange={event => set('ean', event.target.value.replace(/\D/g, '').slice(0, 14))} required={requireComplete} pattern={product.ean ? '\\d{8,14}' : undefined} inputMode="numeric" placeholder="859…" /></Field>
     </div>
     <div className="form-grid">
       <Field label="Značka (volitelně)"><input value={product.brand ?? ''} onChange={event => set('brand', event.target.value)} /></Field>
@@ -72,7 +72,7 @@ function ProductFields({ product, setProduct, requireComplete = true }: { produc
       <Field label="Obvyklá cena (volitelně)"><div className="number-with-unit"><input type="number" min="0" step="0.01" value={product.priceCzk || ''} onChange={event => set('priceCzk', Number(event.target.value))} /><span>Kč</span></div></Field>
     </div>
     <section className="nutrition-editor product-nutrition"><div className="nutrition-head"><div><strong>Výživové hodnoty</strong><small>Údaje na 100 g</small></div></div><div className="nutrition-fields">{([
-      ['kcal', 'kcal', 'kcal'], ['carbs', 'Sacharidy', 'g'], ['fat', 'Tuky', 'g'], ['protein', 'Proteiny', 'g'], ['fiber', 'Vláknina', 'g'],
+      ['kcal', 'kcal', 'kcal'], ['carbs', 'Sacharidy', 'g'], ['sugars', 'z toho cukry', 'g'], ['fat', 'Tuky', 'g'], ['protein', 'Proteiny', 'g'], ['fiber', 'Vláknina', 'g'],
     ] as const).map(([key, label, unit]) => <Field label={label} key={key}><div className="number-with-unit"><input type="number" min="0" step="0.01" value={product.nutritionPer100g[key] || ''} onChange={event => setNutrition(key, Number(event.target.value))} required={requireComplete && key !== 'fiber'} /><span>{unit}</span></div></Field>)}</div></section>
     <div className="form-grid">
       <Field label="Obchody (volitelně)"><input value={product.stores ?? ''} onChange={event => set('stores', event.target.value)} placeholder="Albert, Lidl…" /></Field>
@@ -104,7 +104,7 @@ export function ProductCatalogPage({ products, onAdd, onEdit, onDelete, onUse, o
       <div className="catalog-photo">{product.image ? <img src={product.image} alt={product.name} /> : <Package size={28} />}</div>
       <div className="catalog-card-body"><div className="catalog-card-title"><div><span>{product.source === 'open-food-facts' ? 'Open Food Facts' : product.brand || 'Vlastní produkt'}</span><h3>{product.name}</h3></div><div><button className="icon-btn" onClick={() => onEdit(product)} aria-label="Upravit"><Pencil size={15} /></button><button className="icon-btn" onClick={() => onDelete(product.id)} aria-label="Smazat"><Trash2 size={15} /></button></div></div>
         <p className="catalog-ean">EAN {product.ean} · {product.packageGrams} g</p>
-        <div className="catalog-macros"><span><b>{product.nutritionPer100g.kcal}</b> kcal</span><span><b>{product.nutritionPer100g.protein}</b> g P</span><span><b>{product.nutritionPer100g.carbs}</b> g S</span><span><b>{product.nutritionPer100g.fat}</b> g T</span></div>
+        <div className="catalog-macros"><span><b>{product.nutritionPer100g.kcal}</b> kcal</span><span><b>{product.nutritionPer100g.protein}</b> g B</span><span><b>{product.nutritionPer100g.carbs}</b> g S<small>cukry {product.nutritionPer100g.sugars ?? 0} g</small></span><span><b>{product.nutritionPer100g.fat}</b> g T</span></div>
         {(product.stores || product.priceCzk) && <p className="catalog-meta">{[product.stores, product.priceCzk ? `${product.priceCzk} Kč` : ''].filter(Boolean).join(' · ')}</p>}
         <div className="catalog-actions"><button className="primary" onClick={() => onUse(product)}><Plus size={16} />Použít produkt</button>{product.eshopUrl && <a className="secondary" href={product.eshopUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} />E-shop</a>}</div>
       </div>

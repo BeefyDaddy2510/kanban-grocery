@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.5.0
+
+- Nutriční údaje nově rozlišují celkové sacharidy a podíl cukrů.
+- Nové Sledování hmotnosti s kartami osob, cílovou váhou a historií vážení.
+- Denní jídelní přehled po jednotlivých jídlech s historií, energií a plněním makroživin.
+- Přidávání jídel z databáze, zásob nebo ručním zápisem s volitelným uložením do databáze potravin.
+
 ## 1.4.0
 
 - Nová databáze potravin s EAN, fotografií, gramáží balení a nutričními hodnotami.

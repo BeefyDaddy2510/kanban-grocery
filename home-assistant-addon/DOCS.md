@@ -24,6 +24,12 @@ Ingress běží pod zabezpečeným přístupem Home Assistantu. Dostupnost fotoa
 
 Od verze 1.4.0 lze naskenovaný EAN spárovat s vlastní databází potravin nebo veřejným katalogem Open Food Facts a produkt rovnou přidat do zásob, mrazáku či nákupního seznamu. Potraviny uložené v domácím katalogu mají před externím API vždy přednost.
 
+## Sledování hmotnosti a jídelní historie
+
+V menu **Sledování hmotnosti** lze vytvořit samostatné karty členů domácnosti, nastavit cílovou váhu a denní cíle energie, sacharidů včetně cukrů, tuků, bílkovin a vlákniny. Každý den má vlastní trvale uložený jídelní přehled rozdělený na snídani, dvě svačiny, oběd a večeři.
+
+Jídla lze vybírat z databáze potravin a zásob nebo zapsat ručně. Ručně zadanou potravinu je možné současně uložit do domácí databáze pro další použití. Stejně jako ostatní data jsou osobní karty, vážení a jídelní historie součástí persistentního úložiště a záloh addonu.
+
 ## Podpora
 
 Chyby a návrhy hlaste v [GitHub Issues](https://github.com/BeefyDaddy2510/kanban-grocery/issues).

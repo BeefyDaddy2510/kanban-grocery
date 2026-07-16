@@ -15,7 +15,7 @@ Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Do
 - kanbanové zásoby s editací položek, množstvím +/−, minimy, cenami, daty nákupu a expirace
 - skenování EAN/QR živou kamerou nebo fotografií kódu
 - vlastní fotografie produktů nebo odkaz na existující obrázek; nahrané fotografie se automaticky zmenší na thumbnail
-- výživové hodnoty na 100 g (kcal, sacharidy, tuky, bílkoviny a vláknina) s živým přepočtem podle zadané gramáže
+- výživové hodnoty na 100 g (kcal, sacharidy včetně cukrů, tuky, bílkoviny a vláknina) s živým přepočtem podle zadané gramáže
 - propojení na veřejný katalog Kalorických tabulek pro dohledání nutričních údajů
 - upravitelné kategorie a umístění položek
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
@@ -30,6 +30,9 @@ Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Do
 - vlastní databáze potravin s EAN, fotografií, gramáží balení, nutričními hodnotami, obchody, cenou, e-shopem a poznámkami
 - globální tlačítko **SCAN** s volbou přidání naskenované potraviny do zásob, mrazáku nebo nákupního seznamu
 - automatické dohledání neznámého EAN ve veřejné databázi Open Food Facts; domácí katalog má vždy přednost
+- sledování hmotnosti pro více osob s cílovou váhou, denními cíli a historií vážení
+- trvalý jídelní deník po jednotlivých dnech a jídlech s kruhovým přehledem energie a makroživin
+- přidávání jídel z databáze potravin a zásob nebo ručním zápisem s možností uložit novou potravinu do katalogu
 
 ## Spuštění
 
@@ -52,7 +55,7 @@ Image se při každém pushi do větve `main` automaticky sestaví pro `amd64` i
 ghcr.io/beefydaddy2510/kanban-grocery:latest
 ```
 
-Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.4.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
+Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.5.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
 
 V Portaineru otevřete **Stacks → Add stack → Web editor** a vložte:
 

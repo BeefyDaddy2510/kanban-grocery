@@ -82,7 +82,7 @@ test('looks up and normalizes a food product by EAN', async t => {
         product: {
           code: '3017620422003', product_name: 'Test product', brands: 'Test brand',
           product_quantity: 350, product_quantity_unit: 'g', image_front_url: 'https://example.test/product.jpg',
-          stores: 'Test shop', nutriments: { 'energy-kcal_100g': 539, carbohydrates_100g: 57.5, fat_100g: 30.9, proteins_100g: 6.3 },
+          stores: 'Test shop', nutriments: { 'energy-kcal_100g': 539, carbohydrates_100g: 57.5, sugars_100g: 56.3, fat_100g: 30.9, proteins_100g: 6.3 },
         },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } })
     },
@@ -97,6 +97,7 @@ test('looks up and normalizes a food product by EAN', async t => {
   assert.equal(product.product.name, 'Test product')
   assert.equal(product.product.packageGrams, 350)
   assert.equal(product.product.nutritionPer100g.kcal, 539)
+  assert.equal(product.product.nutritionPer100g.sugars, 56.3)
 
   await fetch(`http://127.0.0.1:${port}/api/products/3017620422003`)
   assert.equal(calls, 1, 'product response should be cached')

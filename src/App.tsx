@@ -3,15 +3,16 @@ import type { IScannerControls } from '@zxing/browser'
 import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
-  ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, ScanLine, Search, ShoppingBasket,
+  ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, Scale, ScanLine, Search, ShoppingBasket,
   QrCode, Settings, Snowflake, Sun, Trash2, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
 import { languages, useI18n, type Language } from './i18n'
 import { ProductCatalogPage, ProductEditorDialog, ProductScanResultDialog, toFoodProduct, type ProductAction, type ProductDraft } from './products'
-import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, PantryItem, Recipe, ShoppingItem, SiteSettings, Todo, Unit } from './types'
+import { WeightTrackingPage } from './weight'
+import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, NutritionPer100g, PantryItem, Recipe, ShoppingItem, SiteSettings, Todo, Unit } from './types'
 
-type Page = 'dashboard' | 'products' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
+type Page = 'dashboard' | 'products' | 'weight' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
 type SyncStatus = 'loading' | 'saving' | 'synced' | 'error'
 type CentralStateEnvelope = {
@@ -24,7 +25,15 @@ const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const STATE_API_URL = new URL('api/state', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
-const normalizeData = (value: AppData): AppData => ({ ...value, products: Array.isArray(value.products) ? value.products : [] })
+const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
+const normalizeData = (value: AppData): AppData => ({
+  ...initialData,
+  ...value,
+  products: Array.isArray(value.products) ? value.products.map(product => ({ ...product, nutritionPer100g: normalizeNutrition(product.nutritionPer100g) })) : [],
+  pantry: Array.isArray(value.pantry) ? value.pantry.map(item => ({ ...item, nutritionPer100g: item.nutritionPer100g ? normalizeNutrition(item.nutritionPer100g) : undefined })) : [],
+  weightProfiles: Array.isArray(value.weightProfiles) ? value.weightProfiles.map(profile => ({ ...profile, dailyTargets: normalizeNutrition(profile.dailyTargets), weightEntries: Array.isArray(profile.weightEntries) ? profile.weightEntries : [] })) : [],
+  mealEntries: Array.isArray(value.mealEntries) ? value.mealEntries.map(entry => ({ ...entry, nutritionPer100g: normalizeNutrition(entry.nutritionPer100g) })) : [],
+})
 const defaultSettings: SiteSettings = {
   householdName: 'Domácnost Novákových', language: 'cs', theme: 'system', accent: 'coral', customAccent: '', defaultCurrency: 'CZK',
   categories: ['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', 'Ostatní'],
@@ -37,7 +46,7 @@ const accentColors: Record<AccentColor, { labelKey: string; value: string; dark:
   plum: { labelKey: 'accent.plum', value: '#8a668f', dark: '#6e5073' },
 }
 const NAV: { page: Page; labelKey: string; icon: typeof Package }[] = [
-  { page: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard }, { page: 'products', labelKey: 'nav.products', icon: Archive }, { page: 'pantry', labelKey: 'nav.pantry', icon: Package },
+  { page: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard }, { page: 'products', labelKey: 'nav.products', icon: Archive }, { page: 'weight', labelKey: 'nav.weight', icon: Scale }, { page: 'pantry', labelKey: 'nav.pantry', icon: Package },
   { page: 'freezer', labelKey: 'nav.freezer', icon: Snowflake }, { page: 'shopping', labelKey: 'nav.shopping', icon: ShoppingBasket },
   { page: 'recipes', labelKey: 'nav.recipes', icon: ChefHat }, { page: 'todos', labelKey: 'nav.todos', icon: ListChecks }, { page: 'settings', labelKey: 'nav.settings', icon: Settings },
 ]
@@ -307,6 +316,7 @@ function App() {
   const pageContent: Record<Page, ReactNode> = {
     dashboard: <Dashboard data={data} lowItems={lowItems} expiringItems={expiringItems} freezerWarnings={freezerWarnings} pendingShopping={pendingShopping} inventoryValue={inventoryValue} money={money} go={go} updatePantry={updatePantry} toggleTodo={toggleTodo} />,
     products: <ProductCatalogPage products={data.products} onAdd={() => setProductEditor('new')} onEdit={setProductEditor} onDelete={id => setData(current => ({ ...current, products: current.products.filter(product => product.id !== id) }))} onUse={product => setScannedEan(product.ean)} onScan={() => setModal('scanner')} />,
+    weight: <WeightTrackingPage data={data} setData={setData} notify={notify} />,
     pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
     shopping: <Shopping data={data} setData={setData} money={money} open={setModal} notify={notify} />,
@@ -344,6 +354,7 @@ function GlobalSearch({ data, close, go }: { data: AppData; close: () => void; g
   const results = useMemo(() => {
     const all: { id: string; page: Page; title: string; meta: string; search: string }[] = [
       ...data.products.map(product => ({ id: `db-${product.id}`, page: 'products' as Page, title: product.name, meta: `${product.brand || 'Databáze potravin'} · EAN ${product.ean}`, search: [product.name, product.brand, product.ean, product.category, product.stores].join(' ') })),
+      ...data.weightProfiles.map(profile => ({ id: `weight-${profile.id}`, page: 'weight' as Page, title: profile.name, meta: `Osobní karta · ${profile.currentWeightKg} kg`, search: `${profile.name} hmotnost váha` })),
       ...data.pantry.map(item => ({ id: `p-${item.id}`, page: 'pantry' as Page, title: item.name, meta: `${item.category} · ${item.location} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.location, item.barcode].join(' ') })),
       ...data.freezer.map(item => ({ id: `f-${item.id}`, page: 'freezer' as Page, title: item.name, meta: `${item.category} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.note].join(' ') })),
       ...data.shoppingLists.flatMap(list => list.items.map(item => ({ id: `s-${list.id}-${item.id}`, page: 'shopping' as Page, title: item.name, meta: `${list.name} · ${list.type}${list.archived ? ` · ${t('search.archive')}` : ''}`, search: [item.name, list.name, list.type].join(' ') }))),
@@ -543,7 +554,7 @@ function Modal({ kind, close, data, setData, notify, settings, editingPantry, ed
   const [productNotes, setProductNotes] = useState('')
   const [nutrition, setNutrition] = useState<NutritionInput>({
     kcal: String(editingPantry?.nutritionPer100g?.kcal ?? ''), carbs: String(editingPantry?.nutritionPer100g?.carbs ?? ''),
-    fat: String(editingPantry?.nutritionPer100g?.fat ?? ''), protein: String(editingPantry?.nutritionPer100g?.protein ?? ''), fiber: String(editingPantry?.nutritionPer100g?.fiber ?? ''),
+    sugars: String(editingPantry?.nutritionPer100g?.sugars ?? ''), fat: String(editingPantry?.nutritionPer100g?.fat ?? ''), protein: String(editingPantry?.nutritionPer100g?.protein ?? ''), fiber: String(editingPantry?.nutritionPer100g?.fiber ?? ''),
   })
   const [recipeIngredients, setRecipeIngredients] = useState<Recipe['ingredients']>(() => editingRecipe?.ingredients.map(ingredient => ({ ...ingredient })) ?? [{ name: '', amount: '' }])
   const categories = [...new Set([...settings.categories, ...data.pantry.map(i => i.category)])].sort((a, b) => a.localeCompare(b, locale))
@@ -556,17 +567,17 @@ function Modal({ kind, close, data, setData, notify, settings, editingPantry, ed
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const f = new FormData(e.currentTarget)
     const productName = kind === 'shopping' ? shoppingName : pantryName
-    const hasCompleteCatalogData = Boolean(productName.trim() && barcode && imageSource && Number(packageGrams) > 0 && nutrition.kcal !== '' && nutrition.carbs !== '' && nutrition.fat !== '' && nutrition.protein !== '')
+    const hasCompleteCatalogData = Boolean(productName.trim() && barcode && imageSource && Number(packageGrams) > 0 && nutrition.kcal !== '' && nutrition.carbs !== '' && nutrition.sugars !== '' && nutrition.fat !== '' && nutrition.protein !== '')
     if ((kind === 'pantry' || kind === 'shopping') && saveToCatalog && !hasCompleteCatalogData) {
-      setCatalogError('Pro uložení do databáze doplňte EAN, fotografii, gramáž balení a kcal, sacharidy, tuky a proteiny na 100 g.')
+      setCatalogError('Pro uložení do databáze doplňte EAN, fotografii, gramáž balení a kcal, sacharidy včetně cukrů, tuky a proteiny na 100 g.')
       return
     }
-    const catalogDraft: ProductDraft | undefined = saveToCatalog ? { name: productName.trim(), ean: barcode, image: imageSource || '', packageGrams: Number(packageGrams), nutritionPer100g: { kcal: Number(nutrition.kcal), carbs: Number(nutrition.carbs), fat: Number(nutrition.fat), protein: Number(nutrition.protein), fiber: Number(nutrition.fiber) || 0 }, category: String(f.get('category') || ''), stores: productStores, eshopUrl: productEshopUrl, notes: productNotes, priceCzk: Number(f.get('price')) || 0, source: 'local' } : undefined
+    const catalogDraft: ProductDraft | undefined = saveToCatalog ? { name: productName.trim(), ean: barcode, image: imageSource || '', packageGrams: Number(packageGrams), nutritionPer100g: { kcal: Number(nutrition.kcal), carbs: Number(nutrition.carbs), sugars: Number(nutrition.sugars), fat: Number(nutrition.fat), protein: Number(nutrition.protein), fiber: Number(nutrition.fiber) || 0 }, category: String(f.get('category') || ''), stores: productStores, eshopUrl: productEshopUrl, notes: productNotes, priceCzk: Number(f.get('price')) || 0, source: 'local' } : undefined
     if (kind === 'pantry') {
       const hasNutrition = Object.values(nutrition).some(value => value !== '')
       const existingProduct = catalogDraft ? data.products.find(product => product.ean === catalogDraft.ean) : undefined
       const storedProduct = catalogDraft ? toFoodProduct(catalogDraft, existingProduct) : undefined
-      const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image, nutritionPer100g: hasNutrition ? { kcal: Number(nutrition.kcal) || 0, carbs: Number(nutrition.carbs) || 0, fat: Number(nutrition.fat) || 0, protein: Number(nutrition.protein) || 0, fiber: Number(nutrition.fiber) || 0 } : undefined, portionGrams: hasNutrition ? Math.max(0, Number(portionGrams) || 0) : undefined, productId: storedProduct?.id ?? editingPantry?.productId }
+      const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image, nutritionPer100g: hasNutrition ? { kcal: Number(nutrition.kcal) || 0, carbs: Number(nutrition.carbs) || 0, sugars: Number(nutrition.sugars) || 0, fat: Number(nutrition.fat) || 0, protein: Number(nutrition.protein) || 0, fiber: Number(nutrition.fiber) || 0 } : undefined, portionGrams: hasNutrition ? Math.max(0, Number(portionGrams) || 0) : undefined, productId: storedProduct?.id ?? editingPantry?.productId }
       setData(p => ({ ...p, products: storedProduct ? (p.products.some(product => product.ean === storedProduct.ean) ? p.products.map(product => product.ean === storedProduct.ean ? storedProduct : product) : [storedProduct, ...p.products]) : p.products, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? t('modal.itemUpdated') : t('modal.itemPantryAdded'))
     } else if (kind === 'freezer') {
       const category = String(f.get('category')); const guide = freezerGuide.find(g => g.category === category)
@@ -658,14 +669,14 @@ function PanelHead({ title, subtitle, action, onClick }: { title: string; subtit
 function PageIntro({ title, subtitle, button, icon, onClick }: { title: string; subtitle: string; button: string; icon: ReactNode; onClick: () => void }) { return <section className="page-intro"><div><h2>{title}</h2><p>{subtitle}</p></div><button className="primary" onClick={onClick}>{icon}{button}</button></section> }
 type NutritionValues = NonNullable<PantryItem['nutritionPer100g']>
 type NutritionInput = Record<keyof NutritionValues, string>
-const nutritionLabels: { key: keyof NutritionValues; labelKey: string; unit: string }[] = [{ key: 'kcal', labelKey: 'nutrition.kcal', unit: 'kcal' }, { key: 'carbs', labelKey: 'nutrition.carbs', unit: 'g' }, { key: 'fat', labelKey: 'nutrition.fat', unit: 'g' }, { key: 'protein', labelKey: 'nutrition.protein', unit: 'g' }, { key: 'fiber', labelKey: 'nutrition.fiber', unit: 'g' }]
+const nutritionLabels: { key: keyof NutritionValues; labelKey: string; unit: string }[] = [{ key: 'kcal', labelKey: 'nutrition.kcal', unit: 'kcal' }, { key: 'carbs', labelKey: 'nutrition.carbs', unit: 'g' }, { key: 'sugars', labelKey: 'nutrition.sugars', unit: 'g' }, { key: 'fat', labelKey: 'nutrition.fat', unit: 'g' }, { key: 'protein', labelKey: 'nutrition.protein', unit: 'g' }, { key: 'fiber', labelKey: 'nutrition.fiber', unit: 'g' }]
 function nutritionValue(value: number, grams: number, locale: string) { return new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(value * grams / 100) }
 function NutritionEditor({ nutrition, setNutrition, grams, setGrams, foodName }: { nutrition: NutritionInput; setNutrition: Dispatch<SetStateAction<NutritionInput>>; grams: string; setGrams: (value: string) => void; foodName: string }) {
   const { locale, t } = useI18n()
   const amount = Math.max(0, Number(grams) || 0)
   return <section className="nutrition-editor"><div className="nutrition-head"><div><strong>{t('nutrition.title')}</strong><small>{t('nutrition.per100')}</small></div><a className="secondary" href="https://www.kaloricketabulky.cz/tabulka-potravin" target="_blank" rel="noreferrer" title={foodName ? t('nutrition.searchFood', { name: foodName }) : t('nutrition.openCatalog')}><ExternalLink size={15} />{t('nutrition.catalog')}</a></div><div className="nutrition-fields">{nutritionLabels.map(item => <Field label={t(item.labelKey)} key={item.key}><div className="number-with-unit"><input type="number" min="0" step="0.01" value={nutrition[item.key]} onChange={event => setNutrition(current => ({ ...current, [item.key]: event.target.value }))} placeholder="0" /><span>{item.unit}</span></div></Field>)}</div><div className="portion-row"><Field label={t('nutrition.forAmount')}><div className="number-with-unit"><input type="number" min="0" step="1" value={grams} onChange={event => setGrams(event.target.value)} /><span>g</span></div></Field><div className="nutrition-preview">{nutritionLabels.map(item => <span key={item.key}><small>{t(item.labelKey)}</small><strong>{nutritionValue(Number(nutrition[item.key]) || 0, amount, locale)} {item.unit}</strong></span>)}</div></div></section>
 }
-function NutritionInline({ nutrition, grams, onGrams }: { nutrition: NutritionValues; grams: number; onGrams: (grams: number) => void }) { const { locale, t } = useI18n(); return <span className="nutrition-inline"><span className="macro-grams"><input type="number" min="0" step="1" value={grams} onChange={event => onGrams(Number(event.target.value))} aria-label={t('nutrition.amountAria')} /> g</span><b>{nutritionValue(nutrition.kcal, grams, locale)} kcal</b><span title={t('nutrition.protein')}>P {nutritionValue(nutrition.protein, grams, locale)}</span><span title={t('nutrition.carbs')}>C {nutritionValue(nutrition.carbs, grams, locale)}</span><span title={t('nutrition.fat')}>F {nutritionValue(nutrition.fat, grams, locale)}</span></span> }
+function NutritionInline({ nutrition, grams, onGrams }: { nutrition: NutritionValues; grams: number; onGrams: (grams: number) => void }) { const { locale, t } = useI18n(); return <span className="nutrition-inline"><span className="macro-grams"><input type="number" min="0" step="1" value={grams} onChange={event => onGrams(Number(event.target.value))} aria-label={t('nutrition.amountAria')} /> g</span><b>{nutritionValue(nutrition.kcal, grams, locale)} kcal</b><span title={t('nutrition.protein')}>B {nutritionValue(nutrition.protein, grams, locale)}</span><span title={t('nutrition.carbs')}>S {nutritionValue(nutrition.carbs, grams, locale)} <small>cukry {nutritionValue(nutrition.sugars ?? 0, grams, locale)}</small></span><span title={t('nutrition.fat')}>T {nutritionValue(nutrition.fat, grams, locale)}</span></span> }
 function ProductIcon({ name, image, large }: { name: string; image?: string; large?: boolean }) { const [failed, setFailed] = useState(false); const n = name.toLowerCase(); const emoji = n.includes('mlék') ? '🥛' : n.includes('fazol') ? '🫘' : n.includes('losos') || n.includes('ryb') ? '🐟' : n.includes('kuř') ? '🍗' : n.includes('zelen') ? '🥦' : n.includes('vývar') || n.includes('polév') ? '🥣' : n.includes('olej') ? '🫒' : n.includes('těst') ? '🍝' : n.includes('pleny') || n.includes('ubrou') ? '🧸' : '📦'; return <span className={`product-icon ${large ? 'large' : ''}`}>{image && !failed ? <img src={image} alt="" onError={() => setFailed(true)} /> : emoji}</span> }
 function Quantity({ value, unit, onMinus, onPlus, large }: { value: number; unit: Unit; onMinus: () => void; onPlus: () => void; large?: boolean }) { return <div className={`quantity ${large ? 'large' : ''}`}><button onClick={onMinus}><Minus size={15} /></button><strong>{value}<small>{unit}</small></strong><button onClick={onPlus}><Plus size={15} /></button></div> }
 function Empty({ text }: { text: string }) { return <div className="empty"><CheckCircle2 size={22} /><span>{text}</span></div> }

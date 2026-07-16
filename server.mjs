@@ -96,7 +96,7 @@ export function createAppServer({
       'stores', 'purchase_places', 'categories_tags',
     ].join(',')
     const response = await fetchImpl(`https://world.openfoodfacts.org/api/v2/product/${ean}.json?fields=${encodeURIComponent(fields)}`, {
-      headers: { 'User-Agent': 'Grocy-Homie/1.4 (https://github.com/BeefyDaddy2510/kanban-grocery)' },
+      headers: { 'User-Agent': 'Grocy-Homie/1.5 (https://github.com/BeefyDaddy2510/kanban-grocery)' },
       signal: AbortSignal.timeout(8000),
     })
     if (!response.ok) {
@@ -119,6 +119,7 @@ export function createAppServer({
         nutritionPer100g: {
           kcal: numeric(product.nutriments?.['energy-kcal_100g']) || numeric(product.nutriments?.energy_100g) / 4.184,
           carbs: numeric(product.nutriments?.carbohydrates_100g),
+          sugars: numeric(product.nutriments?.sugars_100g),
           fat: numeric(product.nutriments?.fat_100g),
           protein: numeric(product.nutriments?.proteins_100g),
           fiber: numeric(product.nutriments?.fiber_100g),
