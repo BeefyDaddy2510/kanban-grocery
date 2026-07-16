@@ -8,16 +8,22 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.27-alpine
+FROM node:22-alpine
 
-COPY home-assistant-addon/nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+WORKDIR /app
+COPY server.mjs ./server.mjs
+COPY --from=build /app/dist ./dist
 
+RUN mkdir -p /data
 USER root
-RUN chown -R 101:101 /usr/share/nginx/html
-USER 101
+
+ENV DATA_DIR=/data \
+    STATIC_DIR=/app/dist \
+    PORT=8080
 
 EXPOSE 8080
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
   CMD wget -qO- http://127.0.0.1:8080/healthz || exit 1
+
+CMD ["node", "server.mjs"]
