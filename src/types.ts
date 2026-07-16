@@ -5,6 +5,7 @@ export type AccentColor = 'coral' | 'green' | 'blue' | 'plum'
 
 export interface SiteSettings {
   householdName: string
+  language: import('./i18n').Language
   theme: ThemeMode
   accent: AccentColor
   customAccent: string
