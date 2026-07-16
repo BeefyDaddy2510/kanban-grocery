@@ -12,9 +12,16 @@ import type { AccentColor, AppData, Currency, FreezerItem, PantryItem, Recipe, S
 
 type Page = 'dashboard' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
+type SyncStatus = 'loading' | 'saving' | 'synced' | 'error'
+type CentralStateEnvelope = {
+  state: { data: AppData; settings: SiteSettings } | null
+  revision: number
+  updatedAt: string | null
+}
 
 const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
+const STATE_API_URL = new URL('api/state', document.baseURI).toString()
 const defaultSettings: SiteSettings = {
   householdName: 'Domácnost Novákových', language: 'cs', theme: 'system', accent: 'coral', customAccent: '', defaultCurrency: 'CZK',
   categories: ['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', 'Ostatní'],
@@ -37,6 +44,24 @@ const today = () => new Date().toISOString().slice(0, 10)
 const formatDate = (value: string | undefined, locale: string) => value ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—'
 const daysBetween = (from: string, to: string) => Math.ceil((new Date(to).getTime() - new Date(from).getTime()) / 86400000)
 const householdInitials = (name: string) => name.replace(/^(domácnost|household|haushalt)\s+/i, '').split(/\s+/).filter(Boolean).slice(0, 2).map(word => word[0]).join('').toUpperCase() || 'GH'
+
+async function readCentralState(signal?: AbortSignal) {
+  const response = await fetch(STATE_API_URL, { cache: 'no-store', signal })
+  if (!response.ok) throw new Error(`Central storage returned ${response.status}`)
+  return response.json() as Promise<CentralStateEnvelope>
+}
+
+async function writeCentralState(data: AppData, settings: SiteSettings, signal?: AbortSignal) {
+  const response = await fetch(STATE_API_URL, {
+    method: 'PUT',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state: { data, settings } }),
+    signal,
+  })
+  if (!response.ok) throw new Error(`Central storage returned ${response.status}`)
+  return response.json() as Promise<CentralStateEnvelope>
+}
 
 const prepareThumbnail = (file: File, errors: { read: string; format: string }) => new Promise<string>((resolve, reject) => {
   const reader = new FileReader()
@@ -82,17 +107,128 @@ function App() {
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [storageReady, setStorageReady] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('loading')
+  const revisionRef = useRef(0)
+  const skipNextSaveRef = useRef(false)
+  const dirtyRef = useRef(false)
+  const writeInFlightRef = useRef(false)
   const changeLanguage = (next: Language) => { setLanguage(next); setSettings(current => ({ ...current, language: next })) }
   const cycleLanguage = () => { const index = languages.findIndex(item => item.value === language); changeLanguage(languages[(index + 1) % languages.length].value) }
 
-  useEffect(() => localStorage.setItem(STORE_KEY, JSON.stringify(data)), [data])
+  useEffect(() => {
+    const controller = new AbortController()
+    const load = async () => {
+      try {
+        const remote = await readCentralState(controller.signal)
+        if (remote.state) {
+          const remoteSettings = {
+            ...defaultSettings,
+            ...remote.state.settings,
+            categories: remote.state.settings.categories?.length ? remote.state.settings.categories : defaultSettings.categories,
+            locations: remote.state.settings.locations?.length ? remote.state.settings.locations : defaultSettings.locations,
+          }
+          skipNextSaveRef.current = true
+          setData(remote.state.data)
+          setSettings(remoteSettings)
+          setLanguage(remoteSettings.language)
+          setCurrency(remoteSettings.defaultCurrency)
+          revisionRef.current = remote.revision
+        } else {
+          // The first browser opened after upgrading seeds Home Assistant storage
+          // with its existing local data. Further browsers always receive this copy.
+          const migrated = await writeCentralState(data, settings, controller.signal)
+          revisionRef.current = migrated.revision
+          skipNextSaveRef.current = true
+        }
+        setSyncStatus('synced')
+      } catch (error) {
+        if (controller.signal.aborted) return
+        console.error('Unable to load Home Assistant storage', error)
+        setSyncStatus('error')
+      } finally {
+        if (!controller.signal.aborted) setStorageReady(true)
+      }
+    }
+    void load()
+    return () => controller.abort()
+    // This is intentionally a one-time migration/load with the initial local snapshot.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    localStorage.setItem(STORE_KEY, JSON.stringify(data))
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
+    if (!storageReady) return
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false
+      dirtyRef.current = false
+      return
+    }
+
+    dirtyRef.current = true
+    setSyncStatus('saving')
+    const controller = new AbortController()
+    let retryTimer: ReturnType<typeof setTimeout> | undefined
+    const persist = async () => {
+      writeInFlightRef.current = true
+      try {
+        const saved = await writeCentralState(data, settings, controller.signal)
+        revisionRef.current = saved.revision
+        dirtyRef.current = false
+        setSyncStatus('synced')
+      } catch (error) {
+        if (controller.signal.aborted) return
+        console.error('Unable to save Home Assistant storage', error)
+        setSyncStatus('error')
+        retryTimer = setTimeout(() => void persist(), 5000)
+      } finally {
+        writeInFlightRef.current = false
+      }
+    }
+    const saveTimer = setTimeout(() => void persist(), 350)
+    return () => {
+      controller.abort()
+      clearTimeout(saveTimer)
+      if (retryTimer) clearTimeout(retryTimer)
+    }
+  }, [data, settings, storageReady])
+
   useEffect(() => {
     document.documentElement.dataset.theme = dark ? 'dark' : 'light'
     const accent = accentColors[settings.accent]
     document.documentElement.style.setProperty('--brand', settings.customAccent || accent.value)
     document.documentElement.style.setProperty('--brand-dark', settings.customAccent || accent.dark)
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
   }, [dark, settings])
+  useEffect(() => {
+    if (!storageReady) return
+    let cancelled = false
+    const refresh = async () => {
+      if (dirtyRef.current || writeInFlightRef.current || document.hidden) return
+      try {
+        const remote = await readCentralState()
+        if (!cancelled && remote.state && remote.revision > revisionRef.current) {
+          const remoteSettings = { ...defaultSettings, ...remote.state.settings }
+          skipNextSaveRef.current = true
+          revisionRef.current = remote.revision
+          setData(remote.state.data)
+          setSettings(remoteSettings)
+          setLanguage(remoteSettings.language)
+          setCurrency(remoteSettings.defaultCurrency)
+          setSyncStatus('synced')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Unable to refresh Home Assistant storage', error)
+          setSyncStatus('error')
+        }
+      }
+    }
+    const timer = setInterval(() => void refresh(), 3000)
+    const visibility = () => { if (!document.hidden) void refresh() }
+    document.addEventListener('visibilitychange', visibility)
+    return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', visibility) }
+  }, [setLanguage, storageReady])
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
     const change = (event: MediaQueryListEvent) => setSystemDark(event.matches)
@@ -116,6 +252,8 @@ function App() {
       }).catch(() => undefined)
   }, [locale])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2600); return () => clearTimeout(timer) }, [toast])
+
+  if (!storageReady) return <div className="storage-gate"><span className="storage-spinner" /><strong>Grocy Homie</strong><p>{t('sync.loading')}</p></div>
 
   const money = (czk: number) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: currency === 'CZK' ? 0 : 2 }).format(currency === 'CZK' ? czk : czk / rate)
   const lowItems = data.pantry.filter(i => i.quantity < i.minimum)
@@ -152,7 +290,7 @@ function App() {
     </aside>
     {mobileNav && <button className="nav-scrim" onClick={() => setMobileNav(false)} />}
     <main>
-      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{t(NAV.find(item => item.page === page)?.labelKey ?? 'nav.dashboard')}</h1></div><div className="top-actions"><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>{t('common.search')}</span><kbd>⌘ K</kbd></button><button className="language-toggle" onClick={cycleLanguage} aria-label={t('app.changeLanguage')} title={t('app.changeLanguage')}>{languages.find(item => item.value === language)?.short}</button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
+      <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{t(NAV.find(item => item.page === page)?.labelKey ?? 'nav.dashboard')}</h1></div><div className="top-actions"><span className={`sync-status ${syncStatus}`} title={t(`sync.${syncStatus}`)}><i />{t(`sync.${syncStatus}`)}</span><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>{t('common.search')}</span><kbd>⌘ K</kbd></button><button className="language-toggle" onClick={cycleLanguage} aria-label={t('app.changeLanguage')} title={t('app.changeLanguage')}>{languages.find(item => item.value === language)?.short}</button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
       <div className="page-content">{pageContent[page]}</div>
       <footer>Grocy Homie · {t('app.ecbRate', { date: rateDate })} · {t('app.localData')}</footer>
     </main>

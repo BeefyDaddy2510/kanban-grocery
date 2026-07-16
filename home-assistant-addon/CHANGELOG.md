@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.3.0
+
+- Centrální persistentní úložiště v Home Assistantu dostupné ze všech zařízení.
+- Automatická migrace existujících dat z prvního prohlížeče po aktualizaci.
+- Průběžná synchronizace otevřených klientů a indikace stavu ukládání.
+
 ## 1.2.0
 
 - Kompletní uživatelské rozhraní v češtině, angličtině a němčině.
