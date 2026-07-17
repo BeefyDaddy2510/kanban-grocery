@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { ExternalLink, Package, Pencil, Plus, QrCode, ScanLine, Search, ShoppingBasket, Snowflake, Trash2, X } from 'lucide-react'
+import { categoryImageFor } from './foodCatalog'
 import { useI18n } from './i18n'
 import type { FoodProduct, ShoppingList, SiteSettings, Unit } from './types'
 
@@ -25,7 +26,7 @@ const productUid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()
 
 export function toFoodProduct(draft: ProductDraft, existing?: FoodProduct): FoodProduct {
   const timestamp = new Date().toISOString()
-  return { ...draft, id: existing?.id ?? productUid(), createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp }
+  return { ...existing, ...draft, id: existing?.id ?? productUid(), createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp }
 }
 
 export const findProductByEan = (products: FoodProduct[], ean: string) => ean ? products.find(product => product.ean === ean) : undefined
@@ -109,7 +110,7 @@ export function ProductCatalogPage({ products, onAdd, onEdit, onDelete, onUse, o
     <section className="page-intro"><div><h2>Databáze potravin</h2><p>Vlastní katalog produktů s EAN, fotografií, gramáží a nutričními hodnotami.</p></div><button className="primary" onClick={onAdd}><Plus />Přidat potravinu</button></section>
     <div className="catalog-toolbar"><label className="input-search"><Search size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Hledat název, značku nebo EAN…" /></label><button className="secondary scan-button" onClick={onScan}><QrCode size={18} />SCAN</button></div>
     {visible.length ? <div className="product-catalog-grid">{visible.map(product => <article className="product-catalog-card" key={product.id}>
-      <div className="catalog-photo">{product.image ? <img src={product.image} alt={product.name} /> : <Package size={28} />}</div>
+      <div className="catalog-photo">{product.image ? <img src={product.image} alt={product.name} loading="lazy" decoding="async" onError={event => { const fallback = categoryImageFor(product.category); if (fallback && !event.currentTarget.dataset.fallback) { event.currentTarget.dataset.fallback = 'true'; event.currentTarget.src = fallback } }} /> : <Package size={28} />}{product.imageSourceUrl && <a className="catalog-photo-credit" href={product.imageSourceUrl} target="_blank" rel="noreferrer" title={[product.imageSourceTitle, product.imageCreator, product.imageLicense].filter(Boolean).join(' · ')}><ExternalLink size={11} />Foto: {product.imageCreator || 'zdroj'}</a>}</div>
       <div className="catalog-card-body"><div className="catalog-card-title"><div><span>{product.source === 'open-food-facts' ? 'Open Food Facts' : product.brand || 'Vlastní produkt'}</span><h3>{product.name}</h3></div><div><button className="icon-btn" onClick={() => onEdit(product)} aria-label="Upravit"><Pencil size={15} /></button><button className="icon-btn" onClick={() => onDelete(product.id)} aria-label="Smazat"><Trash2 size={15} /></button></div></div>
         <p className="catalog-ean">{product.ean ? `EAN ${product.ean} · ` : ''}{product.packageGrams} g</p>
         <div className="catalog-macros"><span><b>{product.nutritionPer100g.kcal}</b> kcal</span><span><b>{product.nutritionPer100g.protein}</b> g B</span><span><b>{product.nutritionPer100g.carbs}</b> g S<small>cukry {product.nutritionPer100g.sugars ?? 0} g</small></span><span><b>{product.nutritionPer100g.fat}</b> g T</span></div>

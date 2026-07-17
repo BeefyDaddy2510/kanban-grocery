@@ -58,6 +58,11 @@ export interface FoodProduct {
   name: string
   ean: string
   image: string
+  imageSourceUrl?: string
+  imageSourceTitle?: string
+  imageCreator?: string
+  imageLicense?: string
+  imageLicenseUrl?: string
   nutritionPer100g: NutritionPer100g
   packageGrams: number
   category?: string

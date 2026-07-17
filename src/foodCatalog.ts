@@ -1,6 +1,10 @@
 import type { FoodProduct, NutritionPer100g } from './types'
+import foodImageUrls from './foodImageUrls.json'
 
-export const FOOD_CATALOG_SEED_VERSION = 2
+export const FOOD_CATALOG_SEED_VERSION = 3
+
+type FoodImageInfo = { imageUrl: string; sourceUrl: string; sourceTitle: string; imageCreator: string; imageLicense: string; imageLicenseUrl: string }
+const specificImages = foodImageUrls as Record<string, FoodImageInfo | null>
 
 type SeedGroup = {
   category: string
@@ -30,6 +34,7 @@ const categoryImages: Record<string, string> = {
   'Dochucovadla': './food-categories/spices-herbs.webp',
   'Nápoje': './food-categories/beverages.webp',
 }
+export const categoryImageFor = (category?: string) => category ? categoryImages[category] ?? '' : ''
 
 // Orientační hodnoty pro běžné syrové nebo suché suroviny. Konkrétní výrobek se může lišit.
 const groups: SeedGroup[] = [
@@ -111,10 +116,17 @@ const groups: SeedGroup[] = [
 const SEEDED_AT = '2026-07-17T00:00:00.000Z'
 
 export const stapleFoodProducts: FoodProduct[] = groups.flatMap((seedGroup, groupIndex) => seedGroup.names.map((name, itemIndex) => ({
+  ...specificImages[name] && {
+    imageSourceUrl: specificImages[name]!.sourceUrl,
+    imageSourceTitle: specificImages[name]!.sourceTitle,
+    imageCreator: specificImages[name]!.imageCreator,
+    imageLicense: specificImages[name]!.imageLicense,
+    imageLicenseUrl: specificImages[name]!.imageLicenseUrl,
+  },
   id: `staple-v${FOOD_CATALOG_SEED_VERSION}-${groupIndex + 1}-${itemIndex + 1}`,
   name,
   ean: '',
-  image: categoryImages[seedGroup.category] ?? '',
+  image: specificImages[name]?.imageUrl ?? categoryImages[seedGroup.category] ?? '',
   nutritionPer100g: { ...seedGroup.nutrition },
   packageGrams: seedGroup.packageGrams,
   category: seedGroup.category,

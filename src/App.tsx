@@ -34,7 +34,8 @@ const normalizeData = (value: AppData): AppData => {
   const storedProducts = Array.isArray(value.products) ? value.products.map(product => {
     const normalized = { ...product, ean: product.ean || '', image: product.image || '', nutritionPer100g: normalizeNutrition(product.nutritionPer100g) }
     const seed = seedByName.get(product.name.trim().toLocaleLowerCase('cs-CZ'))
-    return needsCatalogMigration && !normalized.image && seed?.image ? { ...normalized, image: seed.image } : normalized
+    const shouldReplaceSeedImage = needsCatalogMigration && seed?.image && (!normalized.image || normalized.image.startsWith('./food-categories/'))
+    return shouldReplaceSeedImage ? { ...normalized, image: seed.image, imageSourceUrl: seed.imageSourceUrl, imageSourceTitle: seed.imageSourceTitle, imageCreator: seed.imageCreator, imageLicense: seed.imageLicense, imageLicenseUrl: seed.imageLicenseUrl } : normalized
   }) : []
   const knownNames = new Set(storedProducts.map(product => product.name.trim().toLocaleLowerCase('cs-CZ')))
   const products = needsCatalogMigration ? [...storedProducts, ...stapleFoodProducts.filter(product => !knownNames.has(product.name.toLocaleLowerCase('cs-CZ')))] : storedProducts
