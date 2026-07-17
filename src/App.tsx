@@ -29,11 +29,15 @@ const STATE_API_URL = new URL('api/state', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
 const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
 const normalizeData = (value: AppData): AppData => {
-  const storedProducts = Array.isArray(value.products) ? value.products.map(product => ({ ...product, ean: product.ean || '', nutritionPer100g: normalizeNutrition(product.nutritionPer100g) })) : []
+  const needsCatalogMigration = (value.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
+  const seedByName = new Map(stapleFoodProducts.map(product => [product.name.toLocaleLowerCase('cs-CZ'), product]))
+  const storedProducts = Array.isArray(value.products) ? value.products.map(product => {
+    const normalized = { ...product, ean: product.ean || '', image: product.image || '', nutritionPer100g: normalizeNutrition(product.nutritionPer100g) }
+    const seed = seedByName.get(product.name.trim().toLocaleLowerCase('cs-CZ'))
+    return needsCatalogMigration && !normalized.image && seed?.image ? { ...normalized, image: seed.image } : normalized
+  }) : []
   const knownNames = new Set(storedProducts.map(product => product.name.trim().toLocaleLowerCase('cs-CZ')))
-  const products = (value.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
-    ? [...storedProducts, ...stapleFoodProducts.filter(product => !knownNames.has(product.name.toLocaleLowerCase('cs-CZ')))]
-    : storedProducts
+  const products = needsCatalogMigration ? [...storedProducts, ...stapleFoodProducts.filter(product => !knownNames.has(product.name.toLocaleLowerCase('cs-CZ')))] : storedProducts
   return {
     ...initialData,
     ...value,

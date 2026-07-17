@@ -1,6 +1,6 @@
 import type { FoodProduct, NutritionPer100g } from './types'
 
-export const FOOD_CATALOG_SEED_VERSION = 1
+export const FOOD_CATALOG_SEED_VERSION = 2
 
 type SeedGroup = {
   category: string
@@ -11,6 +11,25 @@ type SeedGroup = {
 
 const group = (category: string, packageGrams: number, nutrition: NutritionPer100g, names: string[]): SeedGroup => ({ category, packageGrams, nutrition, names })
 const n = (kcal: number, carbs: number, sugars: number, fat: number, protein: number, fiber: number): NutritionPer100g => ({ kcal, carbs, sugars, fat, protein, fiber })
+
+const categoryImages: Record<string, string> = {
+  'Zelenina': './food-categories/vegetables.webp',
+  'Ovoce': './food-categories/fruit.webp',
+  'Maso': './food-categories/meat.webp',
+  'Ryby a mořské plody': './food-categories/fish.webp',
+  'Mléčné výrobky': './food-categories/dairy-eggs.webp',
+  'Vejce': './food-categories/dairy-eggs.webp',
+  'Luštěniny': './food-categories/legumes-nuts.webp',
+  'Obiloviny a přílohy': './food-categories/grains-bread.webp',
+  'Mouky a pečení': './food-categories/grains-bread.webp',
+  'Pečivo': './food-categories/grains-bread.webp',
+  'Ořechy a semínka': './food-categories/legumes-nuts.webp',
+  'Tuky a oleje': './food-categories/oils-cans.webp',
+  'Koření a bylinky': './food-categories/spices-herbs.webp',
+  'Konzervy': './food-categories/oils-cans.webp',
+  'Dochucovadla': './food-categories/spices-herbs.webp',
+  'Nápoje': './food-categories/beverages.webp',
+}
 
 // Orientační hodnoty pro běžné syrové nebo suché suroviny. Konkrétní výrobek se může lišit.
 const groups: SeedGroup[] = [
@@ -95,7 +114,7 @@ export const stapleFoodProducts: FoodProduct[] = groups.flatMap((seedGroup, grou
   id: `staple-v${FOOD_CATALOG_SEED_VERSION}-${groupIndex + 1}-${itemIndex + 1}`,
   name,
   ean: '',
-  image: '',
+  image: categoryImages[seedGroup.category] ?? '',
   nutritionPer100g: { ...seedGroup.nutrition },
   packageGrams: seedGroup.packageGrams,
   category: seedGroup.category,
