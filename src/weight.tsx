@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { ArrowRightLeft, CalendarDays, ChefHat, ChevronLeft, ChevronRight, Copy, Pencil, Plus, Scale, Target, Trash2, TrendingDown, UserRound, X } from 'lucide-react'
-import { emptyProduct, ProductFields, toFoodProduct, type ProductDraft } from './products'
+import { emptyProduct, findProductByEan, ProductFields, toFoodProduct, upsertFoodProduct, type ProductDraft } from './products'
 import { calculateRecipeNutrition } from './nutrition'
 import type { AppData, FoodProduct, MealEntry, MealType, NutritionPer100g, Recipe, WeightProfile } from './types'
 
@@ -198,10 +198,10 @@ function MealDialog({ profileId, date, meal, data, setData, close, notify }: { p
       entry = { id: uid(), profileId, date, meal, name: selectedRecipe.recipe.name, grams: recipeConsumedGrams, nutritionPer100g: selectedRecipe.calculated.nutritionPer100g, recipeId: selectedRecipe.recipe.id, portionCount: recipeAmountMode === 'portion' ? portionCount : undefined, source: 'recipe' }
     } else {
       if (!draft.name.trim()) return
-      if (saveToCatalog) stored = toFoodProduct(draft, data.products.find(item => item.ean === draft.ean))
+      if (saveToCatalog) stored = toFoodProduct(draft, findProductByEan(data.products, draft.ean))
       entry = { id: uid(), profileId, date, meal, name: draft.name.trim(), grams, nutritionPer100g: draft.nutritionPer100g, productId: stored?.id, image: draft.image, source: 'manual' }
     }
-    setData(current => ({ ...current, products: stored ? (current.products.some(item => item.id === stored.id) ? current.products.map(item => item.id === stored!.id ? stored! : item) : [stored, ...current.products.filter(item => item.ean !== stored!.ean)]) : current.products, mealEntries: [...current.mealEntries, entry] }))
+    setData(current => ({ ...current, products: stored ? upsertFoodProduct(current.products, stored) : current.products, mealEntries: [...current.mealEntries, entry] }))
     close()
     notify(mode === 'recipe' ? 'Recept byl přidán do denního přehledu.' : saveToCatalog ? 'Jídlo bylo přidáno a potravina uložena do databáze.' : 'Jídlo bylo přidáno do denního přehledu.')
   }

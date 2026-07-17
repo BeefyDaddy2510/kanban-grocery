@@ -7,8 +7,9 @@ import {
   QrCode, Settings, Snowflake, Sun, Trash2, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
+import { FOOD_CATALOG_SEED_VERSION, stapleFoodProducts } from './foodCatalog'
 import { languages, useI18n, type Language } from './i18n'
-import { ProductCatalogPage, ProductEditorDialog, ProductScanResultDialog, toFoodProduct, type ProductAction, type ProductDraft } from './products'
+import { findProductByEan, ProductCatalogPage, ProductEditorDialog, ProductScanResultDialog, toFoodProduct, upsertFoodProduct, type ProductAction, type ProductDraft } from './products'
 import { WeightTrackingPage } from './weight'
 import { parseIngredientGrams, resolveIngredientNutrition } from './nutrition'
 import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, NutritionPer100g, PantryItem, Recipe, RecipeIngredient, ShoppingItem, SiteSettings, Todo, Unit } from './types'
@@ -27,14 +28,22 @@ const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const STATE_API_URL = new URL('api/state', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
 const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
-const normalizeData = (value: AppData): AppData => ({
-  ...initialData,
-  ...value,
-  products: Array.isArray(value.products) ? value.products.map(product => ({ ...product, nutritionPer100g: normalizeNutrition(product.nutritionPer100g) })) : [],
-  pantry: Array.isArray(value.pantry) ? value.pantry.map(item => ({ ...item, nutritionPer100g: item.nutritionPer100g ? normalizeNutrition(item.nutritionPer100g) : undefined })) : [],
-  weightProfiles: Array.isArray(value.weightProfiles) ? value.weightProfiles.map(profile => ({ ...profile, dailyTargets: normalizeNutrition(profile.dailyTargets), weightEntries: Array.isArray(profile.weightEntries) ? profile.weightEntries : [] })) : [],
-  mealEntries: Array.isArray(value.mealEntries) ? value.mealEntries.map(entry => ({ ...entry, nutritionPer100g: normalizeNutrition(entry.nutritionPer100g) })) : [],
-})
+const normalizeData = (value: AppData): AppData => {
+  const storedProducts = Array.isArray(value.products) ? value.products.map(product => ({ ...product, ean: product.ean || '', nutritionPer100g: normalizeNutrition(product.nutritionPer100g) })) : []
+  const knownNames = new Set(storedProducts.map(product => product.name.trim().toLocaleLowerCase('cs-CZ')))
+  const products = (value.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
+    ? [...storedProducts, ...stapleFoodProducts.filter(product => !knownNames.has(product.name.toLocaleLowerCase('cs-CZ')))]
+    : storedProducts
+  return {
+    ...initialData,
+    ...value,
+    foodCatalogSeedVersion: FOOD_CATALOG_SEED_VERSION,
+    products,
+    pantry: Array.isArray(value.pantry) ? value.pantry.map(item => ({ ...item, nutritionPer100g: item.nutritionPer100g ? normalizeNutrition(item.nutritionPer100g) : undefined })) : [],
+    weightProfiles: Array.isArray(value.weightProfiles) ? value.weightProfiles.map(profile => ({ ...profile, dailyTargets: normalizeNutrition(profile.dailyTargets), weightEntries: Array.isArray(profile.weightEntries) ? profile.weightEntries : [] })) : [],
+    mealEntries: Array.isArray(value.mealEntries) ? value.mealEntries.map(entry => ({ ...entry, nutritionPer100g: normalizeNutrition(entry.nutritionPer100g) })) : [],
+  }
+}
 const defaultSettings: SiteSettings = {
   householdName: 'Domácnost Novákových', language: 'cs', theme: 'system', accent: 'coral', customAccent: '', defaultCurrency: 'CZK',
   categories: ['Konzervy', 'Přílohy', 'Mléčné výrobky', 'Maso', 'Ryby', 'Ovoce', 'Zelenina', 'Pečivo', 'Nápoje', 'Koření', 'Vaření', 'Dětské', 'Drogerie', 'Ostatní'],
@@ -119,6 +128,7 @@ function App() {
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null)
   const [productEditor, setProductEditor] = useState<FoodProduct | 'new' | null>(null)
   const [scannedEan, setScannedEan] = useState('')
+  const [selectedCatalogProduct, setSelectedCatalogProduct] = useState<FoodProduct | null>(null)
   const [mobileNav, setMobileNav] = useState(false)
   const [toast, setToast] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -143,12 +153,19 @@ function App() {
             categories: remote.state.settings.categories?.length ? remote.state.settings.categories : defaultSettings.categories,
             locations: remote.state.settings.locations?.length ? remote.state.settings.locations : defaultSettings.locations,
           }
+          const normalizedData = normalizeData(remote.state.data)
+          const needsCatalogSeed = (remote.state.data.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
           skipNextSaveRef.current = true
-          setData(normalizeData(remote.state.data))
+          setData(normalizedData)
           setSettings(remoteSettings)
           setLanguage(remoteSettings.language)
           setCurrency(remoteSettings.defaultCurrency)
-          revisionRef.current = remote.revision
+          if (needsCatalogSeed) {
+            const migrated = await writeCentralState(normalizedData, remoteSettings, controller.signal)
+            revisionRef.current = migrated.revision
+          } else {
+            revisionRef.current = remote.revision
+          }
         } else {
           // The first browser opened after upgrading seeds Home Assistant storage
           // with its existing local data. Further browsers always receive this copy.
@@ -285,18 +302,18 @@ function App() {
   const go = (target: Page) => { setPage(target); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
   const closeModal = () => { setModal(null); setEditingPantry(null); setEditingRecipe(null) }
   const saveProduct = (draft: ProductDraft, existing?: FoodProduct) => {
-    const product = toFoodProduct(draft, existing ?? data.products.find(item => item.ean === draft.ean))
-    setData(current => ({ ...current, products: current.products.some(item => item.id === product.id) ? current.products.map(item => item.id === product.id ? product : item) : [product, ...current.products.filter(item => item.ean !== product.ean)] }))
+    const product = toFoodProduct(draft, existing ?? findProductByEan(data.products, draft.ean))
+    setData(current => ({ ...current, products: upsertFoodProduct(current.products, product) }))
     setProductEditor(null)
     notify(existing ? 'Potravina byla upravena.' : 'Potravina byla uložena do databáze.')
   }
   const productAction = (action: ProductAction) => {
-    const existing = data.products.find(item => item.ean === action.product.ean)
+    const existing = data.products.find(item => item.id === action.existingId) ?? findProductByEan(data.products, action.product.ean)
     const stored = existing ? toFoodProduct(action.product, existing) : toFoodProduct(action.product)
     const productId = existing?.id ?? (action.saveToCatalog ? stored.id : undefined)
     setData(current => {
       const next: AppData = { ...current }
-      if (action.saveToCatalog) next.products = current.products.some(item => item.ean === stored.ean) ? current.products.map(item => item.ean === stored.ean ? stored : item) : [stored, ...current.products]
+      if (action.saveToCatalog) next.products = upsertFoodProduct(current.products, stored)
       if (action.destination === 'pantry') {
         const item: PantryItem = { id: uid(), name: action.product.name, category: action.product.category || settings.defaultCategory, location: action.location || settings.defaultLocation, quantity: action.quantity, minimum: settings.defaultMinimum, unit: action.unit, priceCzk: action.product.priceCzk || 0, purchasedAt: today(), barcode: action.product.ean, image: action.product.image, nutritionPer100g: action.product.nutritionPer100g, portionGrams: action.product.packageGrams || 100, productId }
         next.pantry = [item, ...current.pantry]
@@ -311,12 +328,13 @@ function App() {
       return next
     })
     setScannedEan('')
+    setSelectedCatalogProduct(null)
     notify(action.destination === 'pantry' ? 'Potravina byla přidána do zásob.' : action.destination === 'freezer' ? 'Potravina byla přidána do mrazáku.' : 'Potravina byla přidána na nákupní seznam.')
   }
 
   const pageContent: Record<Page, ReactNode> = {
     dashboard: <Dashboard data={data} lowItems={lowItems} expiringItems={expiringItems} freezerWarnings={freezerWarnings} pendingShopping={pendingShopping} inventoryValue={inventoryValue} money={money} go={go} updatePantry={updatePantry} toggleTodo={toggleTodo} />,
-    products: <ProductCatalogPage products={data.products} onAdd={() => setProductEditor('new')} onEdit={setProductEditor} onDelete={id => setData(current => ({ ...current, products: current.products.filter(product => product.id !== id) }))} onUse={product => setScannedEan(product.ean)} onScan={() => setModal('scanner')} />,
+    products: <ProductCatalogPage products={data.products} onAdd={() => setProductEditor('new')} onEdit={setProductEditor} onDelete={id => setData(current => ({ ...current, products: current.products.filter(product => product.id !== id) }))} onUse={product => { setSelectedCatalogProduct(product); setScannedEan(product.ean) }} onScan={() => setModal('scanner')} />,
     weight: <WeightTrackingPage data={data} setData={setData} notify={notify} />,
     pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
@@ -342,7 +360,7 @@ function App() {
     </main>
     {modal && <Modal kind={modal} close={closeModal} data={data} setData={setData} notify={notify} settings={settings} editingPantry={editingPantry} editingRecipe={editingRecipe} onScanned={code => { const ean = code.replace(/\D/g, ''); if (ean.length < 8 || ean.length > 14) { notify('Naskenovaný kód není platný EAN/GTIN.'); return } setScannedEan(ean); closeModal() }} />}
     {productEditor && <ProductEditorDialog initial={productEditor === 'new' ? undefined : productEditor} close={() => setProductEditor(null)} save={saveProduct} />}
-    {scannedEan && <ProductScanResultDialog ean={scannedEan} products={data.products} settings={settings} shoppingLists={data.shoppingLists} close={() => setScannedEan('')} confirm={productAction} />}
+    {(scannedEan || selectedCatalogProduct) && <ProductScanResultDialog ean={scannedEan} localProduct={selectedCatalogProduct ?? undefined} products={data.products} settings={settings} shoppingLists={data.shoppingLists} close={() => { setScannedEan(''); setSelectedCatalogProduct(null) }} confirm={productAction} />}
     {searchOpen && <GlobalSearch data={data} close={() => setSearchOpen(false)} go={target => { setSearchOpen(false); go(target) }} />}
     {toast && <div className="toast"><CheckCircle2 size={19} />{toast}</div>}
   </div>
@@ -354,7 +372,7 @@ function GlobalSearch({ data, close, go }: { data: AppData; close: () => void; g
   const normalize = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
   const results = useMemo(() => {
     const all: { id: string; page: Page; title: string; meta: string; search: string }[] = [
-      ...data.products.map(product => ({ id: `db-${product.id}`, page: 'products' as Page, title: product.name, meta: `${product.brand || 'Databáze potravin'} · EAN ${product.ean}`, search: [product.name, product.brand, product.ean, product.category, product.stores].join(' ') })),
+      ...data.products.map(product => ({ id: `db-${product.id}`, page: 'products' as Page, title: product.name, meta: [product.brand || 'Databáze potravin', product.ean ? `EAN ${product.ean}` : 'bez EAN'].join(' · '), search: [product.name, product.brand, product.ean, product.category, product.stores].join(' ') })),
       ...data.weightProfiles.map(profile => ({ id: `weight-${profile.id}`, page: 'weight' as Page, title: profile.name, meta: `Osobní karta · ${profile.currentWeightKg} kg`, search: `${profile.name} hmotnost váha` })),
       ...data.pantry.map(item => ({ id: `p-${item.id}`, page: 'pantry' as Page, title: item.name, meta: `${item.category} · ${item.location} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.location, item.barcode].join(' ') })),
       ...data.freezer.map(item => ({ id: `f-${item.id}`, page: 'freezer' as Page, title: item.name, meta: `${item.category} · ${item.quantity} ${item.unit}`, search: [item.name, item.category, item.note].join(' ') })),
@@ -568,28 +586,28 @@ function Modal({ kind, close, data, setData, notify, settings, editingPantry, ed
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault(); const f = new FormData(e.currentTarget)
     const productName = kind === 'shopping' ? shoppingName : pantryName
-    const hasCompleteCatalogData = Boolean(productName.trim() && barcode && imageSource && Number(packageGrams) > 0 && nutrition.kcal !== '' && nutrition.carbs !== '' && nutrition.sugars !== '' && nutrition.fat !== '' && nutrition.protein !== '')
+    const hasCompleteCatalogData = Boolean(productName.trim() && imageSource && Number(packageGrams) > 0 && nutrition.kcal !== '' && nutrition.carbs !== '' && nutrition.sugars !== '' && nutrition.fat !== '' && nutrition.protein !== '')
     if ((kind === 'pantry' || kind === 'shopping') && saveToCatalog && !hasCompleteCatalogData) {
-      setCatalogError('Pro uložení do databáze doplňte EAN, fotografii, gramáž balení a kcal, sacharidy včetně cukrů, tuky a proteiny na 100 g.')
+      setCatalogError('Pro uložení do databáze doplňte fotografii, gramáž balení a kcal, sacharidy včetně cukrů, tuky a proteiny na 100 g. EAN je volitelný.')
       return
     }
     const catalogDraft: ProductDraft | undefined = saveToCatalog ? { name: productName.trim(), ean: barcode, image: imageSource || '', packageGrams: Number(packageGrams), nutritionPer100g: { kcal: Number(nutrition.kcal), carbs: Number(nutrition.carbs), sugars: Number(nutrition.sugars), fat: Number(nutrition.fat), protein: Number(nutrition.protein), fiber: Number(nutrition.fiber) || 0 }, category: String(f.get('category') || ''), stores: productStores, eshopUrl: productEshopUrl, notes: productNotes, priceCzk: Number(f.get('price')) || 0, source: 'local' } : undefined
     if (kind === 'pantry') {
       const hasNutrition = Object.values(nutrition).some(value => value !== '')
-      const existingProduct = catalogDraft ? data.products.find(product => product.ean === catalogDraft.ean) : undefined
+      const existingProduct = catalogDraft ? findProductByEan(data.products, catalogDraft.ean) : undefined
       const storedProduct = catalogDraft ? toFoodProduct(catalogDraft, existingProduct) : undefined
       const item: PantryItem = { id: editingPantry?.id ?? uid(), name: String(f.get('name')), category: String(f.get('category') || 'Ostatní'), location: String(f.get('location')), quantity: Number(f.get('quantity')), minimum: Number(f.get('minimum')), unit: String(f.get('unit')) as Unit, priceCzk: Number(f.get('price')), purchasedAt: String(f.get('purchasedAt')), expiresAt: String(f.get('expiresAt')) || undefined, barcode: barcode || undefined, image: imageUrl.trim() || image, nutritionPer100g: hasNutrition ? { kcal: Number(nutrition.kcal) || 0, carbs: Number(nutrition.carbs) || 0, sugars: Number(nutrition.sugars) || 0, fat: Number(nutrition.fat) || 0, protein: Number(nutrition.protein) || 0, fiber: Number(nutrition.fiber) || 0 } : undefined, portionGrams: hasNutrition ? Math.max(0, Number(portionGrams) || 0) : undefined, productId: storedProduct?.id ?? editingPantry?.productId }
-      setData(p => ({ ...p, products: storedProduct ? (p.products.some(product => product.ean === storedProduct.ean) ? p.products.map(product => product.ean === storedProduct.ean ? storedProduct : product) : [storedProduct, ...p.products]) : p.products, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? t('modal.itemUpdated') : t('modal.itemPantryAdded'))
+      setData(p => ({ ...p, products: storedProduct ? upsertFoodProduct(p.products, storedProduct) : p.products, pantry: editingPantry ? p.pantry.map(existing => existing.id === item.id ? item : existing) : [item, ...p.pantry] })); notify(editingPantry ? t('modal.itemUpdated') : t('modal.itemPantryAdded'))
     } else if (kind === 'freezer') {
       const category = String(f.get('category')); const guide = freezerGuide.find(g => g.category === category)
       const item: FreezerItem = { id: uid(), name: String(f.get('name')), category, quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, frozenAt: String(f.get('frozenAt')), recommendedMonths: guide?.max ?? Number(f.get('months')) ?? 6, note: String(f.get('note')) || undefined }
       setData(p => ({ ...p, freezer: [item, ...p.freezer] })); notify(t('modal.itemFreezerAdded'))
     } else if (kind === 'shopping') {
       const listId = String(f.get('list'))
-      const existingProduct = catalogDraft ? data.products.find(product => product.ean === catalogDraft.ean) : undefined
+      const existingProduct = catalogDraft ? findProductByEan(data.products, catalogDraft.ean) : undefined
       const storedProduct = catalogDraft ? toFoodProduct(catalogDraft, existingProduct) : undefined
       const item: ShoppingItem = { id: uid(), name: String(f.get('name')), quantity: Number(f.get('quantity')), unit: String(f.get('unit')) as Unit, checked: false, priceCzk: Number(f.get('price')) || undefined, addToPantry: f.get('addToPantry') === 'on', kanbanMinimum: Number(f.get('minimum')) || undefined, productId: storedProduct?.id, barcode: barcode || undefined, image: imageSource || undefined }
-      setData(p => ({ ...p, products: storedProduct ? (p.products.some(product => product.ean === storedProduct.ean) ? p.products.map(product => product.ean === storedProduct.ean ? storedProduct : product) : [storedProduct, ...p.products]) : p.products, shoppingLists: p.shoppingLists.map(l => l.id === listId ? { ...l, items: [...l.items, item] } : l) })); notify(t('modal.itemShoppingAdded'))
+      setData(p => ({ ...p, products: storedProduct ? upsertFoodProduct(p.products, storedProduct) : p.products, shoppingLists: p.shoppingLists.map(l => l.id === listId ? { ...l, items: [...l.items, item] } : l) })); notify(t('modal.itemShoppingAdded'))
     } else if (kind === 'todo') {
       const task: Todo = { id: uid(), title: String(f.get('title')), date: String(f.get('date')), done: false, category: String(f.get('category')) as Todo['category'] }
       setData(p => ({ ...p, todos: [...p.todos, task] })); notify(t('modal.todoAdded'))

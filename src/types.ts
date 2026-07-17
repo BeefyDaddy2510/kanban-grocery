@@ -176,6 +176,7 @@ export interface Todo {
 }
 
 export interface AppData {
+  foodCatalogSeedVersion?: number
   products: FoodProduct[]
   weightProfiles: WeightProfile[]
   mealEntries: MealEntry[]

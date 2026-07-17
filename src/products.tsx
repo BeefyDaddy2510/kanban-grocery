@@ -7,6 +7,7 @@ export type ProductDraft = Omit<FoodProduct, 'id' | 'createdAt' | 'updatedAt'>
 export type ProductDestination = 'pantry' | 'freezer' | 'shopping'
 export type ProductAction = {
   product: ProductDraft
+  existingId?: string
   destination: ProductDestination
   quantity: number
   unit: Unit
@@ -25,6 +26,13 @@ const productUid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()
 export function toFoodProduct(draft: ProductDraft, existing?: FoodProduct): FoodProduct {
   const timestamp = new Date().toISOString()
   return { ...draft, id: existing?.id ?? productUid(), createdAt: existing?.createdAt ?? timestamp, updatedAt: timestamp }
+}
+
+export const findProductByEan = (products: FoodProduct[], ean: string) => ean ? products.find(product => product.ean === ean) : undefined
+
+export const upsertFoodProduct = (products: FoodProduct[], product: FoodProduct) => {
+  const matches = (candidate: FoodProduct) => candidate.id === product.id || Boolean(product.ean && candidate.ean === product.ean)
+  return products.some(matches) ? products.map(candidate => matches(candidate) ? product : candidate) : [product, ...products]
 }
 
 const prepareImage = (file: File) => new Promise<string>((resolve, reject) => {
@@ -63,7 +71,7 @@ export function ProductFields({ product, setProduct, requireComplete = true }: {
   return <>
     <div className="product-form-lead">
       <Field label="Název potraviny"><input value={product.name} onChange={event => set('name', event.target.value)} required placeholder="např. Řecký jogurt" /></Field>
-      <Field label={`EAN / GTIN${requireComplete ? '' : ' (volitelně)'}`}><input value={product.ean} onChange={event => set('ean', event.target.value.replace(/\D/g, '').slice(0, 14))} required={requireComplete} pattern={product.ean ? '\\d{8,14}' : undefined} inputMode="numeric" placeholder="859…" /></Field>
+      <Field label="EAN / GTIN (volitelně)"><input value={product.ean} onChange={event => set('ean', event.target.value.replace(/\D/g, '').slice(0, 14))} pattern={product.ean ? '\\d{8,14}' : undefined} inputMode="numeric" placeholder="859…" /></Field>
     </div>
     <div className="form-grid">
       <Field label="Značka (volitelně)"><input value={product.brand ?? ''} onChange={event => set('brand', event.target.value)} /></Field>
@@ -103,7 +111,7 @@ export function ProductCatalogPage({ products, onAdd, onEdit, onDelete, onUse, o
     {visible.length ? <div className="product-catalog-grid">{visible.map(product => <article className="product-catalog-card" key={product.id}>
       <div className="catalog-photo">{product.image ? <img src={product.image} alt={product.name} /> : <Package size={28} />}</div>
       <div className="catalog-card-body"><div className="catalog-card-title"><div><span>{product.source === 'open-food-facts' ? 'Open Food Facts' : product.brand || 'Vlastní produkt'}</span><h3>{product.name}</h3></div><div><button className="icon-btn" onClick={() => onEdit(product)} aria-label="Upravit"><Pencil size={15} /></button><button className="icon-btn" onClick={() => onDelete(product.id)} aria-label="Smazat"><Trash2 size={15} /></button></div></div>
-        <p className="catalog-ean">EAN {product.ean} · {product.packageGrams} g</p>
+        <p className="catalog-ean">{product.ean ? `EAN ${product.ean} · ` : ''}{product.packageGrams} g</p>
         <div className="catalog-macros"><span><b>{product.nutritionPer100g.kcal}</b> kcal</span><span><b>{product.nutritionPer100g.protein}</b> g B</span><span><b>{product.nutritionPer100g.carbs}</b> g S<small>cukry {product.nutritionPer100g.sugars ?? 0} g</small></span><span><b>{product.nutritionPer100g.fat}</b> g T</span></div>
         {(product.stores || product.priceCzk) && <p className="catalog-meta">{[product.stores, product.priceCzk ? `${product.priceCzk} Kč` : ''].filter(Boolean).join(' · ')}</p>}
         <div className="catalog-actions"><button className="primary" onClick={() => onUse(product)}><Plus size={16} />Použít produkt</button>{product.eshopUrl && <a className="secondary" href={product.eshopUrl} target="_blank" rel="noreferrer"><ExternalLink size={15} />E-shop</a>}</div>
@@ -119,8 +127,8 @@ export function ProductEditorDialog({ initial, close, save }: { initial?: FoodPr
 
 type LookupResponse = { found: boolean; source: 'open-food-facts'; product?: Partial<ProductDraft> }
 
-export function ProductScanResultDialog({ ean, products, settings, shoppingLists, close, confirm }: { ean: string; products: FoodProduct[]; settings: SiteSettings; shoppingLists: ShoppingList[]; close: () => void; confirm: (action: ProductAction) => void }) {
-  const local = products.find(product => product.ean === ean)
+export function ProductScanResultDialog({ ean, localProduct, products, settings, shoppingLists, close, confirm }: { ean: string; localProduct?: FoodProduct; products: FoodProduct[]; settings: SiteSettings; shoppingLists: ShoppingList[]; close: () => void; confirm: (action: ProductAction) => void }) {
+  const local = localProduct ?? findProductByEan(products, ean)
   const [product, setProduct] = useState<ProductDraft>(() => local ? { name: local.name, ean: local.ean, image: local.image, nutritionPer100g: { ...local.nutritionPer100g }, packageGrams: local.packageGrams, category: local.category, brand: local.brand, stores: local.stores, eshopUrl: local.eshopUrl, priceCzk: local.priceCzk, notes: local.notes, source: local.source } : emptyProduct(ean))
   const [loading, setLoading] = useState(!local)
   const [lookupMessage, setLookupMessage] = useState(local ? 'Nalezeno ve vaší databázi.' : 'Hledám produkt v Open Food Facts…')
@@ -131,7 +139,7 @@ export function ProductScanResultDialog({ ean, products, settings, shoppingLists
   const [listId, setListId] = useState(shoppingLists.find(list => !list.archived)?.id ?? '')
   const [saveToCatalog, setSaveToCatalog] = useState(!local)
   useEffect(() => {
-    if (local) return
+    if (local || !ean) return
     const controller = new AbortController()
     fetch(new URL(`api/products/${ean}`, document.baseURI), { signal: controller.signal, cache: 'no-store' })
       .then(async response => { if (!response.ok) throw new Error(String(response.status)); return response.json() as Promise<LookupResponse> })
@@ -144,7 +152,7 @@ export function ProductScanResultDialog({ ean, products, settings, shoppingLists
       .finally(() => setLoading(false))
     return () => controller.abort()
   }, [ean, local])
-  return <div className="modal-backdrop scan-result-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal product-editor-modal"><div className="modal-head"><div><span className="eyebrow">Naskenováno · EAN {ean}</span><h2>{loading ? 'Hledám potravinu…' : product.name || 'Neznámá potravina'}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); confirm({ product, destination, quantity, unit, location, listId, saveToCatalog }) }}>
+  return <div className="modal-backdrop scan-result-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal product-editor-modal"><div className="modal-head"><div><span className="eyebrow">{ean ? `Naskenováno · EAN ${ean}` : 'Databáze potravin'}</span><h2>{loading ? 'Hledám potravinu…' : product.name || 'Neznámá potravina'}</h2></div><button className="icon-btn" onClick={close}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); confirm({ product, existingId: local?.id, destination, quantity, unit, location, listId, saveToCatalog }) }}>
     <div className={`lookup-status ${loading ? 'loading' : ''}`}><ScanLine size={18} /><span>{lookupMessage}</span></div>
     <ProductFields product={product} setProduct={setProduct} requireComplete={saveToCatalog} />
     <section className="scan-destination"><strong>Kam potravinu přidat?</strong><div className="destination-options"><button type="button" className={destination === 'pantry' ? 'active' : ''} onClick={() => setDestination('pantry')}><Package size={19} />Zásoby</button><button type="button" className={destination === 'freezer' ? 'active' : ''} onClick={() => setDestination('freezer')}><Snowflake size={19} />Mrazák</button><button type="button" className={destination === 'shopping' ? 'active' : ''} onClick={() => setDestination('shopping')}><ShoppingBasket size={19} />Nákupní seznam</button></div>

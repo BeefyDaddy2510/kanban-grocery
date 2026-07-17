@@ -1,4 +1,5 @@
 import type { AppData } from './types'
+import { FOOD_CATALOG_SEED_VERSION, stapleFoodProducts } from './foodCatalog'
 
 const isoDaysFromNow = (days: number) => {
   const date = new Date()
@@ -26,7 +27,8 @@ export const freezerGuide = [
 ]
 
 export const initialData: AppData = {
-  products: [],
+  foodCatalogSeedVersion: FOOD_CATALOG_SEED_VERSION,
+  products: stapleFoodProducts,
   weightProfiles: [],
   mealEntries: [],
   pantry: [
