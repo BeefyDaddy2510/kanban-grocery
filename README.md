@@ -58,7 +58,7 @@ Image se při každém pushi do větve `main` automaticky sestaví pro `amd64` i
 ghcr.io/beefydaddy2510/kanban-grocery:latest
 ```
 
-Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.7.0`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
+Každý release zároveň publikuje verzovaný multiarch tag, například `ghcr.io/beefydaddy2510/kanban-grocery:1.7.1`. Stejný image používá standardní Docker deployment i Home Assistant App, takže obě varianty dostávají vždy totožnou funkcionalitu.
 
 V Portaineru otevřete **Stacks → Add stack → Web editor** a vložte:
 

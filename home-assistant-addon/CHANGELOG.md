@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.7.1
+
+- Nákupní seznamy lze přesouvat dlouhým podržením a přetažením před, za nebo mezi ostatní seznamy.
+- Nový rychlý řádek přidá položku do aktivního seznamu přes Enter nebo tlačítko plus; podrobný formulář zůstává zachovaný.
+- Rychlé zadávání našeptává názvy z databáze potravin a při shodě zachová propojení na produkt.
+- Opraveno zobrazení počtu archivovaných seznamů.
+
 ## 1.7.0
 
 - Tlačítko Nový seznam nyní otevře formulář a vytvoří nový nákupní seznam včetně typu a vlastní barvy.
