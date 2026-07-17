@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0
+
+- Tlačítko Nový seznam nyní otevře formulář a vytvoří nový nákupní seznam včetně typu a vlastní barvy.
+- Nový nákupní seznam lze vytvořit také v případě, že jsou všechny ostatní seznamy archivované.
+- Databáze obsahuje 290 základních surovin s nepovinným EAN a orientačními výživovými hodnotami.
+- Každá základní surovina má vlastní tematickou fotografii z otevřeného internetového zdroje včetně údajů o autorovi a licenci.
+- Karty databáze potravin mají zlepšený kontrast textu a bezpečný náhradní obrázek.
+
 ## 1.6.0
 
 - Hotové recepty lze přidávat do jídelního dne podle porce nebo zkonzumované hmotnosti.

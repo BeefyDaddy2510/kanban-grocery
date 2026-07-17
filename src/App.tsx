@@ -12,7 +12,7 @@ import { languages, useI18n, type Language } from './i18n'
 import { findProductByEan, ProductCatalogPage, ProductEditorDialog, ProductScanResultDialog, toFoodProduct, upsertFoodProduct, type ProductAction, type ProductDraft } from './products'
 import { WeightTrackingPage } from './weight'
 import { parseIngredientGrams, resolveIngredientNutrition } from './nutrition'
-import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, NutritionPer100g, PantryItem, Recipe, RecipeIngredient, ShoppingItem, SiteSettings, Todo, Unit } from './types'
+import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, NutritionPer100g, PantryItem, Recipe, RecipeIngredient, ShoppingItem, ShoppingList, SiteSettings, Todo, Unit } from './types'
 
 type Page = 'dashboard' | 'products' | 'weight' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
@@ -479,6 +479,7 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
   const archivedLists = data.shoppingLists.filter(l => l.archived)
   const [active, setActive] = useState(activeLists[0]?.id ?? '')
   const [showArchived, setShowArchived] = useState(false)
+  const [newListOpen, setNewListOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
   const [finishSelection, setFinishSelection] = useState<Set<string>>(new Set())
   const list = activeLists.find(l => l.id === active) ?? activeLists[0]
@@ -492,7 +493,15 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
     setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === id ? { ...l, archived: false } : l) }))
     setActive(id); setShowArchived(false); notify(t('shopping.restored'))
   }
-  if (!list) return <><PageIntro title={t('shopping.title')} subtitle={t('shopping.allArchived')} button={t('pantry.add')} icon={<Plus />} onClick={() => notify(t('shopping.restoreFirst'))} /><ArchivedLists lists={archivedLists} restore={restoreList} /></>
+  const createList = (draft: Pick<ShoppingList, 'name' | 'type' | 'color'>) => {
+    const id = uid()
+    setData(current => ({ ...current, shoppingLists: [...current.shoppingLists, { ...draft, id, items: [] }] }))
+    setActive(id)
+    setShowArchived(false)
+    setNewListOpen(false)
+    notify(t('shopping.created', { name: draft.name }))
+  }
+  if (!list) return <><PageIntro title={t('shopping.title')} subtitle={t('shopping.allArchived')} button={t('shopping.newList')} icon={<Plus />} onClick={() => setNewListOpen(true)} /><ArchivedLists lists={archivedLists} restore={restoreList} />{newListOpen && <NewShoppingListDialog close={() => setNewListOpen(false)} save={createList} />}</>
   const toggle = (id: string) => setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id !== list.id ? l : { ...l, items: l.items.map(i => i.id === id ? { ...i, checked: !i.checked } : i) }) }))
   const checkedItems = list.items.filter(item => item.checked)
   const openFinish = () => {
@@ -508,7 +517,7 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
   const total = list.items.reduce((s, i) => s + (i.priceCzk ?? 0) * i.quantity, 0)
   return <>
     <PageIntro title={t('shopping.title')} subtitle={t('shopping.subtitle')} button={t('pantry.add')} icon={<Plus />} onClick={() => open('shopping')} />
-    <div className="shopping-tabs">{activeLists.map(l => <button key={l.id} className={l.id === list.id ? 'active' : ''} onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button>)}<button className="new-list"><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive')} ({archivedLists.length})</button>}</div>
+    <div className="shopping-tabs">{activeLists.map(l => <button key={l.id} className={l.id === list.id ? 'active' : ''} onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button>)}<button className="new-list" onClick={() => setNewListOpen(true)}><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive')} ({archivedLists.length})</button>}</div>
     {showArchived && <ArchivedLists lists={archivedLists} restore={restoreList} />}
     <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary" onClick={archiveList}><Archive size={17} />{t('shopping.archiveAction')}</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />{t('shopping.scan')}</button></div></div>
       <div className="shopping-progress"><div><span>{t('shopping.progress')}</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
@@ -516,7 +525,21 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
       <div className="shopping-summary"><div><span>{t('shopping.spending')}</span><strong>{money(total)}</strong></div><button className="primary" disabled={!checkedItems.length} onClick={openFinish}><CheckCircle2 size={18} />{t('shopping.done')}</button></div>
     </section>
     {finishOpen && <ShoppingFinishDialog items={checkedItems} selected={finishSelection} setSelected={setFinishSelection} close={() => setFinishOpen(false)} confirm={finish} />}
+    {newListOpen && <NewShoppingListDialog close={() => setNewListOpen(false)} save={createList} />}
   </>
+}
+
+function NewShoppingListDialog({ close, save }: { close: () => void; save: (draft: Pick<ShoppingList, 'name' | 'type' | 'color'>) => void }) {
+  const { t } = useI18n()
+  const [name, setName] = useState('')
+  const [type, setType] = useState('')
+  const [color, setColor] = useState('#e9694b')
+  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.title')}</span><h2>{t('shopping.newList')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); save({ name: name.trim(), type: type.trim(), color }) }}>
+    <Field label={t('shopping.listName')}><input value={name} onChange={event => setName(event.target.value)} placeholder={t('shopping.listNamePlaceholder')} autoFocus required /></Field>
+    <Field label={t('shopping.listType')}><input value={type} onChange={event => setType(event.target.value)} placeholder={t('shopping.listTypePlaceholder')} required /></Field>
+    <Field label={t('shopping.listColor')}><input type="color" value={color} onChange={event => setColor(event.target.value)} /></Field>
+    <div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('common.cancel')}</button><button className="primary" type="submit" disabled={!name.trim() || !type.trim()}><Plus size={17} />{t('shopping.createList')}</button></div>
+  </form></div></div>
 }
 
 function ShoppingFinishDialog({ items, selected, setSelected, close, confirm }: { items: ShoppingItem[]; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>; close: () => void; confirm: () => void }) {
