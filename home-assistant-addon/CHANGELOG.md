@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.1
+
+- OCR nově rozlišuje produktové tabulky faktur od souhrnných částek a platebních řádků.
+- Faktury z Makra vytěžují EAN, názvy, vážené i násobené množství, ceny s DPH a řádkové slevy; opakované produkty se sloučí.
+- Digitální účtenky z Kauflandu podporují daňové značky za cenou, množství na samostatném řádku a následné slevy.
+- PDF s použitelnou textovou vrstvou se nejprve čtou přímo; ostatní se zpracují ve vyšším rozlišení dvěma režimy OCR.
+- V Nastavení se zobrazuje aktuální verze Grocy Homie.
+
 ## 1.8.0
 
 - Rychlé přidání položky do nákupního seznamu nově umožňuje nepovinně zadat množství a cenu za kus.

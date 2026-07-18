@@ -95,15 +95,81 @@ function cleanReceiptName(value) {
     .trim()
 }
 
-const RECEIPT_IGNORED_LINE = /(?:^|\b)(celkem|total|subtotal|součet|suma|dph|vat|tax|základ|sazba|hotovost|cash|karta|card|vráceno|change|datum|date|čas|time|účtenka|receipt|doklad|provozovna|pokladna|pokladní|cashier|ičo|dič|děkujeme|thank you|www\.|tel\.?|otevírací)(?:\b|$)/i
+const RECEIPT_IGNORED_LINE = /(?:^|\s)(celkem|celkov[aá]|total|subtotal|součet|suma|dph|vat|tax|základ|sazba|hotovost|cash|platba|payment|karta|card|vráceno|change|datum|date|čas|time|účtenka|receipt|doklad|faktura|invoice|provozovna|pokladna|pokladní|cashier|ičo|dič|děkujeme|thank you|www\.|tel\.?|otevírací)(?=\s|:|$)/i
+
+function parseInvoiceItems(text) {
+  const parsed = []
+  let lastItem = null
+  for (const rawLine of String(text).split(/\r?\n/)) {
+    const line = rawLine.replace(/[|_]/g, ' ').replace(/\s+/g, ' ').trim()
+    if (!line) continue
+    const productMatch = line.match(/^[A-Z]{1,2}\s+([0-9A-Z]{8,14})\s+(.+?)\s+(PC|BX|KG|BG|BT|SW|PK|EA)\s+(.+)$/i)
+    if (productMatch) {
+      const normalizedBarcode = productMatch[1].replace(/[Oo]/g, '0').replace(/[Il]/g, '1')
+      const barcode = /^\d{8,14}$/.test(normalizedBarcode) ? normalizedBarcode : undefined
+      const unitCode = productMatch[3].toUpperCase()
+      const numericTail = productMatch[4].replace(/\s+(?:6|12|21|23)\s*(?:PX|\d+)?\s*$/i, '')
+      const values = (numericTail.match(/-?\d+(?:[.,]\d+)?/g) || []).map(value => Number(value.replace(',', '.')))
+      let quantity = 0
+      let totalGross = 0
+      if (values.length >= 6) {
+        quantity = values[1] * values[3]
+        totalGross = values[5]
+      } else if (values.length === 5 && unitCode === 'KG') {
+        quantity = values[2]
+        totalGross = values[4]
+      }
+      const name = cleanReceiptName(productMatch[2]).replace(/^\*+/, '').trim()
+      if (/\p{L}{2}/u.test(name) && Number.isFinite(quantity) && quantity > 0 && Number.isFinite(totalGross) && totalGross >= 0) {
+        lastItem = { name, barcode, quantity, unit: unitCode === 'KG' ? 'kg' : 'ks', totalGross }
+        parsed.push(lastItem)
+      } else {
+        lastItem = null
+      }
+      continue
+    }
+    if (lastItem && /(kone[cč]nou\s+spot[rř]ebu|kup\s+v[ií]ce|sleva|discount)/i.test(line)) {
+      const discounts = (line.match(/-\s*\d+(?:[.,]\d+)?/g) || []).map(value => -Number(value.replace(/[-\s]/g, '').replace(',', '.')))
+      if (discounts.length && Number.isFinite(discounts.at(-1))) lastItem.totalGross += discounts.at(-1)
+    }
+  }
+  if (!parsed.length) return []
+  const merged = new Map()
+  for (const item of parsed) {
+    const key = `${item.barcode || item.name.toLocaleLowerCase('cs-CZ')}:${item.unit}`
+    const current = merged.get(key)
+    if (current) {
+      current.quantity += item.quantity
+      current.totalGross += item.totalGross
+    } else {
+      merged.set(key, { ...item })
+    }
+  }
+  return [...merged.values()].map(item => ({
+    name: item.name,
+    ...(item.barcode ? { barcode: item.barcode } : {}),
+    quantity: Math.round(item.quantity * 1000) / 1000,
+    unit: item.unit,
+    priceCzk: Math.round(Math.max(0, item.totalGross) / item.quantity * 100) / 100,
+  }))
+}
 
 export function parseReceiptText(text) {
+  const invoiceItems = parseInvoiceItems(text)
+  if (invoiceItems.length) return invoiceItems
   const sourceLines = String(text).split(/\r?\n/).map(line => line.replace(/[|_]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
-  const items = []
+  const parsed = []
   let pendingName = ''
   for (const line of sourceLines) {
+    const discountMatch = line.match(/(?:^|\s)(?:sleva|discount|\d+\s*%)[^\d-]*(-\s*\d{1,6}[,.]\d{2})(?:\s*[A-Z])?\s*$/i)
+    if (discountMatch && parsed.length) {
+      const discount = -Number(discountMatch[1].replace(/[-\s]/g, '').replace(',', '.'))
+      if (Number.isFinite(discount)) parsed.at(-1).totalGross += discount
+      pendingName = ''
+      continue
+    }
     if (RECEIPT_IGNORED_LINE.test(line)) { pendingName = ''; continue }
-    const priceMatch = line.match(/(-?\d{1,6}[,.]\d{2})(?:\s*(?:Kč|CZK|EUR|€))?\s*[*A-D]?\s*$/i)
+    const priceMatch = line.match(/(-?\d{1,6}[,.]\d{2})(?:\s*(?:Kč|CZK|EUR|€))?\s*[*A-Z]?\s*$/i)
     if (!priceMatch) {
       const possibleName = cleanReceiptName(line)
       pendingName = /\p{L}{2}/u.test(possibleName) && possibleName.length <= 80 ? possibleName : ''
@@ -113,19 +179,32 @@ export function parseReceiptText(text) {
     const totalPrice = Number(priceMatch[1].replace(',', '.'))
     if (!Number.isFinite(totalPrice) || totalPrice < 0) continue
     const beforePrice = line.slice(0, priceMatch.index).trim()
-    const quantityMatch = beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|ks|pc|pcs|bal\.?)(?:\s+(\d{1,6}[,.]\d{2}))?\s*$/i)
-      || beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|ks|pc|pcs|bal\.?)\s+/i)
-    const quantity = quantityMatch ? Number(quantityMatch[1].replace(',', '.')) : 1
-    const explicitUnitPrice = quantityMatch?.[2] ? Number(quantityMatch[2].replace(',', '.')) : null
-    let namePart = quantityMatch?.index !== undefined ? beforePrice.slice(0, quantityMatch.index).trim() : beforePrice
+    const multiplied = beforePrice.match(/^(\d+(?:[.,]\d+)?)\s*(kg|g|l|ml|ks)?\s*[*x×]\s*(\d{1,6}[,.]\d{2})\s*$/i)
+    const singleUnitMarker = beforePrice.match(/^(.+\p{L}.*?)\s+1\s+(?:ks|pc|pcs)\s*$/iu)
+    const quantityMatch = multiplied ? null : beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|×)(?:\s+(\d{1,6}[,.]\d{2}))?\s*$/i)
+      || (multiplied ? null : beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|×)\s+/i))
+    const quantity = multiplied ? Number(multiplied[1].replace(',', '.')) : quantityMatch ? Number(quantityMatch[1].replace(',', '.')) : 1
+    const explicitUnitPrice = multiplied ? Number(multiplied[3].replace(',', '.')) : quantityMatch?.[2] ? Number(quantityMatch[2].replace(',', '.')) : null
+    const unit = multiplied?.[2]?.toLocaleLowerCase() || 'ks'
+    let namePart = multiplied && pendingName ? pendingName : singleUnitMarker ? singleUnitMarker[1] : quantityMatch?.index !== undefined ? beforePrice.slice(0, quantityMatch.index).trim() : beforePrice
     if (!namePart && pendingName) namePart = pendingName
     const name = cleanReceiptName(namePart)
     pendingName = ''
     if (!/\p{L}{2}/u.test(name) || name.length > 80 || !Number.isFinite(quantity) || quantity <= 0 || quantity > 999) continue
-    const priceCzk = explicitUnitPrice && explicitUnitPrice >= 0 ? explicitUnitPrice : totalPrice / quantity
-    items.push({ name, quantity, unit: 'ks', priceCzk: Math.round(priceCzk * 100) / 100 })
+    parsed.push({ name, quantity, unit, totalGross: explicitUnitPrice && explicitUnitPrice >= 0 ? explicitUnitPrice * quantity : totalPrice })
   }
-  return items
+  const merged = new Map()
+  for (const item of parsed) {
+    const key = `${item.name.toLocaleLowerCase('cs-CZ')}:${item.unit}`
+    const current = merged.get(key)
+    if (current) {
+      current.quantity += item.quantity
+      current.totalGross += item.totalGross
+    } else {
+      merged.set(key, { ...item })
+    }
+  }
+  return [...merged.values()].map(item => ({ name: item.name, quantity: Math.round(item.quantity * 1000) / 1000, unit: item.unit, priceCzk: Math.round(Math.max(0, item.totalGross) / item.quantity * 100) / 100 }))
 }
 
 function detectReceiptType(buffer, contentType = '') {
@@ -148,18 +227,36 @@ async function runReceiptOcr(buffer, contentType) {
     await writeFile(inputPath, buffer, { mode: 0o600 })
     let imagePaths = [inputPath]
     if (detected.pdf) {
+      try {
+        const { stdout: pdfText } = await execFile('pdftotext', ['-layout', '-nopgbrk', inputPath, '-'], { timeout: 30000, maxBuffer: 4 * 1024 * 1024 })
+        const invoiceItems = parseInvoiceItems(pdfText)
+        if (invoiceItems.length) return { text: pdfText, items: invoiceItems, source: 'pdf-text' }
+        const brokenLetterSpacing = /(?:\p{L}\s+){5,}\p{L}/u.test(pdfText)
+        const directItems = brokenLetterSpacing ? [] : parseReceiptText(pdfText)
+        if (directItems.length) return { text: pdfText, items: directItems, source: 'pdf-text' }
+      } catch {
+        // Scanned PDFs and documents without a usable text layer continue through OCR below.
+      }
       const outputPrefix = join(temporaryDirectory, 'page')
-      await execFile('pdftoppm', ['-jpeg', '-r', '220', '-f', '1', '-l', '5', inputPath, outputPrefix], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
+      await execFile('pdftoppm', ['-jpeg', '-r', '300', '-f', '1', '-l', '5', inputPath, outputPrefix], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
       imagePaths = (await readdir(temporaryDirectory)).filter(name => /^page-\d+\.jpg$/i.test(name)).sort().map(name => join(temporaryDirectory, name))
       if (!imagePaths.length) throw new Error('PDF contains no readable pages')
     }
-    const texts = []
-    for (const imagePath of imagePaths) {
-      const { stdout } = await execFile('tesseract', [imagePath, 'stdout', '-l', 'ces+eng', '--psm', '6'], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
-      texts.push(stdout)
+    const recognizeImages = async pageSegmentationMode => {
+      const texts = []
+      for (const imagePath of imagePaths) {
+        const { stdout } = await execFile('tesseract', [imagePath, 'stdout', '-l', 'ces+eng', '--psm', pageSegmentationMode], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
+        texts.push(stdout)
+      }
+      return texts.join('\n')
     }
-    const text = texts.join('\n')
-    return { text, items: parseReceiptText(text) }
+    let text = await recognizeImages(detected.pdf ? '4' : '6')
+    let items = parseReceiptText(text)
+    if (detected.pdf && !items.length) {
+      text = await recognizeImages('6')
+      items = parseReceiptText(text)
+    }
+    return { text, items, source: 'ocr' }
   } catch (error) {
     if (!error.status) {
       error.status = error.code === 'ENOENT' ? 503 : 422

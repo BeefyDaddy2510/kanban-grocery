@@ -77,14 +77,17 @@ Object.assign(messages.en, { 'nav.products': 'Food database', 'nav.weight': 'Wei
 Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank', 'nav.weight': 'Gewicht', 'nutrition.sugars': 'davon Zucker' })
 
 Object.assign(messages.cs, {
+  'settings.version': 'Verze aplikace',
   'shopping.quickQuantity': 'Množství (nepovinné)', 'shopping.quickPrice': 'Cena / ks (nepovinná)', 'shopping.quantityShort': 'Množství', 'shopping.priceShort': 'Cena / ks', 'shopping.completeMissing': 'Doplňte množství nebo cenu, pokud je znáte.',
   'receipt.upload': 'Načíst účtenku', 'receipt.title': 'Načíst účtenku', 'receipt.hint': 'Nahrajte fotografii nebo PDF. OCR lokálně rozpozná položky, množství a ceny; před uložením vše zkontrolujte.', 'receipt.choose': 'Vybrat fotku nebo PDF účtenky', 'receipt.formats': 'JPG, PNG, WebP nebo PDF · maximálně 15 MB', 'receipt.recognizing': 'Účtenku právě rozpoznávám…', 'receipt.failed': 'Účtenku se nepodařilo rozpoznat.', 'receipt.noneFound': 'OCR nenašlo žádné položky s cenou. Zkuste ostřejší fotografii bez odlesků.', 'receipt.result': 'Rozpoznané položky', 'receipt.review': 'Upravte případné chyby a zaškrtněte, co uložit do zásob.', 'receipt.addRow': 'Přidat řádek', 'receipt.save': 'Uložit do zásob ({count})', 'receipt.saved': 'Do zásob bylo uloženo {count} položek.',
 })
 Object.assign(messages.en, {
+  'settings.version': 'App version',
   'shopping.quickQuantity': 'Quantity (optional)', 'shopping.quickPrice': 'Price / item (optional)', 'shopping.quantityShort': 'Quantity', 'shopping.priceShort': 'Price / item', 'shopping.completeMissing': 'Add a quantity or price if you know it.',
   'receipt.upload': 'Import receipt', 'receipt.title': 'Import receipt', 'receipt.hint': 'Upload a photo or PDF. Local OCR extracts items, quantities and prices; review everything before saving.', 'receipt.choose': 'Choose a receipt photo or PDF', 'receipt.formats': 'JPG, PNG, WebP or PDF · up to 15 MB', 'receipt.recognizing': 'Recognising the receipt…', 'receipt.failed': 'The receipt could not be recognised.', 'receipt.noneFound': 'OCR found no priced items. Try a sharper photo without glare.', 'receipt.result': 'Recognised items', 'receipt.review': 'Correct any errors and tick the items to save to the pantry.', 'receipt.addRow': 'Add row', 'receipt.save': 'Save to pantry ({count})', 'receipt.saved': '{count} items saved to the pantry.',
 })
 Object.assign(messages.de, {
+  'settings.version': 'App-Version',
   'shopping.quickQuantity': 'Menge (optional)', 'shopping.quickPrice': 'Preis / Stück (optional)', 'shopping.quantityShort': 'Menge', 'shopping.priceShort': 'Preis / Stück', 'shopping.completeMissing': 'Menge oder Preis ergänzen, falls bekannt.',
   'receipt.upload': 'Beleg einlesen', 'receipt.title': 'Beleg einlesen', 'receipt.hint': 'Foto oder PDF hochladen. Die lokale OCR erkennt Artikel, Mengen und Preise; prüfe alles vor dem Speichern.', 'receipt.choose': 'Belegfoto oder PDF auswählen', 'receipt.formats': 'JPG, PNG, WebP oder PDF · maximal 15 MB', 'receipt.recognizing': 'Beleg wird erkannt…', 'receipt.failed': 'Der Beleg konnte nicht erkannt werden.', 'receipt.noneFound': 'OCR hat keine Artikel mit Preis gefunden. Versuche ein schärferes Foto ohne Spiegelungen.', 'receipt.result': 'Erkannte Artikel', 'receipt.review': 'Fehler korrigieren und Artikel zum Speichern in den Vorräten auswählen.', 'receipt.addRow': 'Zeile hinzufügen', 'receipt.save': 'In Vorräte speichern ({count})', 'receipt.saved': '{count} Artikel wurden in den Vorräten gespeichert.',
 })

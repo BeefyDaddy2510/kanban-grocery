@@ -121,6 +121,56 @@ test('parses receipt lines into item names, quantities and unit prices', () => {
   ])
 })
 
+test('parses invoice tables, merges repeated products and applies line discounts', () => {
+  const items = parseReceiptText(`
+M 08595190707768 SALÁT 140g CAMPING PC 14,100 3 42,30 1 42,30 47,38 23
+Určeno pro konečnou spotřebu -23,27 -23,27 -26,06 23
+M 2900180028321 *LACRUM EIDAM 30%CIHLA cca 2,7 KG 84,900 240,44 2,832 240,44 269,29 23 PX
+M 04014400917956 MERCI 250g MANDLE BX 28,900 1 28,90 1 28,90 32,37 23 PX
+Určeno pro konečnou spotřebu -5,78 -5,78 -6,47 23
+M 04014400917956 MERCI 250g MANDLE BX 28,900 1 28,90 1 28,90 32,37 23 PX
+Určeno pro konečnou spotřebu -5,78 -5,78 -6,47 23
+M 8594002112523 FL DRESINK CHIPOTLE-BBQ 250ml BT 44,900 1 44,90 2 89,80 100,58 23 61283
+KUP VÍCE = PLAŤ MÉNĚ - FL DRESINK CHIPOT -6,00 -12,00 -13,44 23
+Celková částka 1 924,05
+Platba kartou 1 924,05`)
+  assert.deepEqual(items, [
+    { name: 'SALÁT 140g CAMPING', barcode: '08595190707768', quantity: 3, unit: 'ks', priceCzk: 7.11 },
+    { name: 'LACRUM EIDAM 30%CIHLA cca 2,7', barcode: '2900180028321', quantity: 2.832, unit: 'kg', priceCzk: 95.09 },
+    { name: 'MERCI 250g MANDLE', barcode: '04014400917956', quantity: 2, unit: 'ks', priceCzk: 25.9 },
+    { name: 'FL DRESINK CHIPOTLE-BBQ 250ml', barcode: '8594002112523', quantity: 2, unit: 'ks', priceCzk: 43.57 },
+  ])
+})
+
+test('does not treat invoice totals and card payments as products', () => {
+  assert.deepEqual(parseReceiptText('Celková částka 1 924,05\nPlatba kartou 1 924,05'), [])
+})
+
+test('parses Kaufland-style split quantity rows, tax letters and discounts', () => {
+  const items = parseReceiptText(`
+Meloun vodní
+5,828 kg * 9,90 57,70 F
+Lacteel UHT 1,5%
+12 * 7,90 94,80 F
+Termosklinice 2ks 56,90 C
+TUC sm&cibule 100g
+2 * 29,90 59,80 F
+Sleva -29,90
+Nektarinky 2 kg 79,90 F
+K-Jarmark pšeničná hladká1kg
+3 * 10,90 32,70 F
+Součet 1 113,63
+Platba kartou 1 113,63`)
+  assert.deepEqual(items, [
+    { name: 'Meloun vodní', quantity: 5.828, unit: 'kg', priceCzk: 9.9 },
+    { name: 'Lacteel UHT 1,5%', quantity: 12, unit: 'ks', priceCzk: 7.9 },
+    { name: 'Termosklinice 2ks', quantity: 1, unit: 'ks', priceCzk: 56.9 },
+    { name: 'TUC sm&cibule 100g', quantity: 2, unit: 'ks', priceCzk: 14.95 },
+    { name: 'Nektarinky 2 kg', quantity: 1, unit: 'ks', priceCzk: 79.9 },
+    { name: 'K-Jarmark pšeničná hladká1kg', quantity: 3, unit: 'ks', priceCzk: 10.9 },
+  ])
+})
+
 test('accepts a receipt upload and returns OCR items', async t => {
   let uploaded
   const app = createAppServer({
