@@ -495,6 +495,7 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
   const [finishOpen, setFinishOpen] = useState(false)
   const [finishSelection, setFinishSelection] = useState<Set<string>>(new Set())
   const [quickItemName, setQuickItemName] = useState('')
+  const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null)
   const [draggingListId, setDraggingListId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<ShoppingListDrop | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
@@ -606,6 +607,16 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
     notify(t('shopping.quickAdded', { name }))
   }
   const toggle = (id: string) => setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id !== list.id ? l : { ...l, items: l.items.map(i => i.id === id ? { ...i, checked: !i.checked } : i) }) }))
+  const updateItem = (updated: ShoppingItem) => {
+    setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id !== list.id ? candidate : { ...candidate, items: candidate.items.map(item => item.id === updated.id ? updated : item) }) }))
+    setEditingItem(null)
+    notify(t('shopping.itemUpdated', { name: updated.name }))
+  }
+  const removeItem = (item: ShoppingItem) => {
+    setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id !== list.id ? candidate : { ...candidate, items: candidate.items.filter(existing => existing.id !== item.id) }) }))
+    if (editingItem?.id === item.id) setEditingItem(null)
+    notify(t('shopping.itemDeleted', { name: item.name }))
+  }
   const checkedItems = list.items.filter(item => item.checked)
   const openFinish = () => {
     setFinishSelection(new Set(checkedItems.filter(item => item.addToPantry).map(item => item.id)))
@@ -626,12 +637,23 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
       <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addQuickItem() } }} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
       <datalist id="shopping-quick-products">{data.products.map(product => <option value={product.name} key={product.id} />)}</datalist>
       <div className="shopping-progress"><div><span>{t('shopping.progress')}</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
-      <div className="shopping-items">{list.items.map(item => <label key={item.id} className={item.checked ? 'checked' : ''}><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ` · ${t('shopping.preselected')}` : ''}</small></span><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : t('shopping.enterPrice')}</span></label>)}</div>
+      <div className="shopping-items">{list.items.map(item => <div key={item.id} className={item.checked ? 'checked' : ''}><label className="shopping-item-toggle"><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} aria-label={item.name} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} image={item.image} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ` · ${t('shopping.preselected')}` : ''}</small></span></label><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : t('shopping.enterPrice')}</span><div className="shopping-item-actions"><button className="icon-btn" type="button" onClick={() => setEditingItem(item)} aria-label={`${t('common.edit')}: ${item.name}`} title={t('common.edit')}><Pencil size={15} /></button><button className="icon-btn delete-item" type="button" onClick={() => removeItem(item)} aria-label={`${t('common.delete')}: ${item.name}`} title={t('common.delete')}><Trash2 size={15} /></button></div></div>)}</div>
       <div className="shopping-summary"><div><span>{t('shopping.spending')}</span><strong>{money(total)}</strong></div><button className="primary" disabled={!checkedItems.length} onClick={openFinish}><CheckCircle2 size={18} />{t('shopping.done')}</button></div>
     </section>
     {finishOpen && <ShoppingFinishDialog items={checkedItems} selected={finishSelection} setSelected={setFinishSelection} close={() => setFinishOpen(false)} confirm={finish} />}
     {newListOpen && <NewShoppingListDialog close={() => setNewListOpen(false)} save={createList} />}
+    {editingItem && <ShoppingItemDialog item={editingItem} close={() => setEditingItem(null)} save={updateItem} />}
   </>
+}
+
+function ShoppingItemDialog({ item, close, save }: { item: ShoppingItem; close: () => void; save: (item: ShoppingItem) => void }) {
+  const { t } = useI18n()
+  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.title')}</span><h2>{t('modal.editItem')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const price = String(form.get('price')).trim(); const minimum = String(form.get('minimum')).trim(); save({ ...item, name: String(form.get('name')).trim(), quantity: Number(form.get('quantity')), unit: String(form.get('unit')) as Unit, priceCzk: price ? Number(price) : undefined, kanbanMinimum: minimum ? Number(minimum) : undefined, addToPantry: form.get('addToPantry') === 'on' }) }}>
+    <Field label={t('modal.name')}><input name="name" required autoFocus defaultValue={item.name} placeholder={t('modal.whatBuy')} /></Field>
+    <div className="form-grid"><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue={item.quantity} required /></Field><Field label={t('settings.unit')}><UnitSelect defaultValue={item.unit} /></Field><Field label={t('modal.estimatedPrice')}><input name="price" type="number" min="0" step="0.01" defaultValue={item.priceCzk} /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="1" defaultValue={item.kanbanMinimum} /></Field></div>
+    <label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked={item.addToPantry} /><span />{t('modal.addToPantry')}</label>
+    <div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('common.cancel')}</button><button className="primary" type="submit"><Pencil size={18} />{t('common.saveChanges')}</button></div>
+  </form></div></div>
 }
 
 function NewShoppingListDialog({ close, save }: { close: () => void; save: (draft: Pick<ShoppingList, 'name' | 'type' | 'color'>) => void }) {

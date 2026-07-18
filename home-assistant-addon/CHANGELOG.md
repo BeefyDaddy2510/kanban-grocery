@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.7.2
+
+- Položky v nákupních seznamech lze nově upravit včetně názvu, množství, jednotky, ceny, minima a převodu do zásob.
+- Jednotlivé položky nákupního seznamu lze smazat přímo z řádku.
+
 ## 1.7.1
 
 - Nákupní seznamy lze přesouvat dlouhým podržením a přetažením před, za nebo mezi ostatní seznamy.
