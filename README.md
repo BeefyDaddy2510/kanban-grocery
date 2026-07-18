@@ -110,7 +110,7 @@ Home Assistant varianta používá zabezpečený Ingress, takže nepotřebuje sa
 
 Doby mražení vycházejí z tabulek [USDA Food Safety and Inspection Service](https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/freezing-and-food-safety). Uvedené doby jsou doporučení pro kvalitu při souvislém skladování při −18 °C, nikoliv automatické datum zdravotní závadnosti.
 
-Kurz EUR/CZK se načítá z denního referenčního kurzu [Evropské centrální banky](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html). Referenční kurzy ECB jsou informativní.
+Kurz EUR/CZK se načítá z denního referenčního kurzu [Evropské centrální banky](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html). Backend kontroluje nový kurz každých šest hodin, poslední úspěšnou hodnotu ukládá do perzistentních dat a při dočasném výpadku ECB ji bezpečně použije jako zálohu. Referenční kurzy ECB jsou informativní.
 
 ## Další produkční fáze
 

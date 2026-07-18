@@ -27,7 +27,9 @@ type CentralStateEnvelope = {
 const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const STATE_API_URL = new URL('api/state', document.baseURI).toString()
+const EXCHANGE_RATE_API_URL = new URL('api/exchange-rate', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
+const EXCHANGE_RATE_REFRESH_MS = 6 * 60 * 60 * 1000
 const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
 const normalizeData = (value: AppData): AppData => {
   const needsCatalogMigration = (value.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
@@ -138,8 +140,8 @@ function App() {
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   const dark = settings.theme === 'dark' || (settings.theme === 'system' && systemDark)
   const [currency, setCurrency] = useState<Currency>(settings.defaultCurrency)
-  const [rate, setRate] = useState(24.284)
-  const [rateDate, setRateDate] = useState('14. 7. 2026')
+  const [rate, setRate] = useState(24.205)
+  const [rateDate, setRateDate] = useState('2026-07-17')
   const [modal, setModal] = useState<ModalKind>(null)
   const [editingPantry, setEditingPantry] = useState<PantryItem | null>(null)
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null)
@@ -291,15 +293,26 @@ function App() {
     window.addEventListener('keydown', keydown); return () => window.removeEventListener('keydown', keydown)
   }, [])
   useEffect(() => {
-    fetch('https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml')
-      .then(r => r.text()).then(xml => {
-        const doc = new DOMParser().parseFromString(xml, 'application/xml')
-        const czk = doc.querySelector('Cube[currency="CZK"]')?.getAttribute('rate')
-        const date = doc.querySelector('Cube[time]')?.getAttribute('time')
-        if (czk) setRate(Number(czk))
-        if (date) setRateDate(formatDate(date, locale))
-      }).catch(() => undefined)
-  }, [locale])
+    let cancelled = false
+    const refresh = async () => {
+      try {
+        const response = await fetch(EXCHANGE_RATE_API_URL, { cache: 'no-store' })
+        if (!response.ok) throw new Error(`Exchange-rate endpoint returned ${response.status}`)
+        const current = await response.json() as { rate?: number; date?: string }
+        if (!cancelled && Number.isFinite(current.rate) && Number(current.rate) > 0 && current.date) {
+          setRate(Number(current.rate))
+          setRateDate(current.date)
+        }
+      } catch (error) {
+        if (!cancelled) console.error('Unable to refresh the ECB exchange rate', error)
+      }
+    }
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), EXCHANGE_RATE_REFRESH_MS)
+    const visibility = () => { if (!document.hidden) void refresh() }
+    document.addEventListener('visibilitychange', visibility)
+    return () => { cancelled = true; window.clearInterval(timer); document.removeEventListener('visibilitychange', visibility) }
+  }, [])
   useEffect(() => { if (!toast) return; const timer = setTimeout(() => setToast(''), 2600); return () => clearTimeout(timer) }, [toast])
 
   if (!storageReady) return <div className="storage-gate"><span className="storage-spinner" /><strong>Grocy Homie</strong><p>{t('sync.loading')}</p></div>
@@ -373,7 +386,7 @@ function App() {
     <main>
       <header className="topbar"><button className="menu-btn icon-btn" onClick={() => setMobileNav(true)}><Menu size={21} /></button><div><span className="eyebrow">{settings.householdName}</span><h1>{t(NAV.find(item => item.page === page)?.labelKey ?? 'nav.dashboard')}</h1></div><div className="top-actions"><span className={`sync-status ${syncStatus}`} title={t(`sync.${syncStatus}`)}><i />{t(`sync.${syncStatus}`)}</span><button className="search-button" onClick={() => setSearchOpen(true)}><Search size={18} /><span>{t('common.search')}</span><kbd>⌘ K</kbd></button><button className="top-scan-button" onClick={() => setModal('scanner')}><QrCode size={18} /><span>SCAN</span></button><button className="language-toggle" onClick={cycleLanguage} aria-label={t('app.changeLanguage')} title={t('app.changeLanguage')}>{languages.find(item => item.value === language)?.short}</button><button className="avatar">{householdInitials(settings.householdName)}</button></div></header>
       <div className="page-content">{pageContent[page]}</div>
-      <footer>Grocy Homie · {t('app.ecbRate', { date: rateDate })} · {t('app.localData')}</footer>
+      <footer>Grocy Homie · {t('app.ecbRate', { date: formatDate(rateDate, locale) })} · {t('app.localData')}</footer>
     </main>
     {modal && <Modal kind={modal} close={closeModal} data={data} setData={setData} notify={notify} settings={settings} editingPantry={editingPantry} editingRecipe={editingRecipe} onScanned={code => { const ean = code.replace(/\D/g, ''); if (ean.length < 8 || ean.length > 14) { notify('Naskenovaný kód není platný EAN/GTIN.'); return } setScannedEan(ean); closeModal() }} />}
     {productEditor && <ProductEditorDialog initial={productEditor === 'new' ? undefined : productEditor} close={() => setProductEditor(null)} save={saveProduct} />}

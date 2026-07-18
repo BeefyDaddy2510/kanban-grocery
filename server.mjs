@@ -7,6 +7,8 @@ const MAX_BODY_BYTES = 8 * 1024 * 1024
 const EMPTY_STATE = Object.freeze({ state: null, revision: 0, updatedAt: null })
 const PRODUCT_CACHE_TTL = 24 * 60 * 60 * 1000
 const PRODUCT_NOT_FOUND_TTL = 60 * 60 * 1000
+const EXCHANGE_RATE_CACHE_TTL = 6 * 60 * 60 * 1000
+const ECB_DAILY_RATES_URL = 'https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml'
 const MIME_TYPES = {
   '.css': 'text/css; charset=utf-8',
   '.gif': 'image/gif',
@@ -62,11 +64,15 @@ export function createAppServer({
   dataDir = process.env.DATA_DIR || '/data',
   staticDir = process.env.STATIC_DIR || resolve('dist'),
   fetchImpl = globalThis.fetch,
+  exchangeRateCacheTtl = EXCHANGE_RATE_CACHE_TTL,
 } = {}) {
   const stateFile = join(dataDir, 'grocy-homie-state.json')
+  const exchangeRateFile = join(dataDir, 'grocy-homie-exchange-rate.json')
   const staticRoot = resolve(staticDir)
   let writeQueue = Promise.resolve()
   const productCache = new Map()
+  let exchangeRateCache = null
+  let exchangeRateRefresh = null
 
   function packageWeight(product) {
     const amount = Number(product.product_quantity)
@@ -130,6 +136,78 @@ export function createAppServer({
     } : { found: false, source: 'open-food-facts' }
     productCache.set(ean, { value, expiresAt: Date.now() + (found ? PRODUCT_CACHE_TTL : PRODUCT_NOT_FOUND_TTL) })
     return value
+  }
+
+  function exchangeRateAttribute(tag, name) {
+    return tag.match(new RegExp(`\\b${name}\\s*=\\s*["']([^"']+)["']`, 'i'))?.[1]
+  }
+
+  function parseExchangeRate(xml) {
+    const cubeTags = String(xml).match(/<Cube\b[^>]*>/gi) || []
+    const date = cubeTags.map(tag => exchangeRateAttribute(tag, 'time')).find(Boolean)
+    const czkTag = cubeTags.find(tag => exchangeRateAttribute(tag, 'currency') === 'CZK')
+    const rate = Number(czkTag ? exchangeRateAttribute(czkTag, 'rate') : NaN)
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(`${date}T00:00:00Z`)) || !Number.isFinite(rate) || rate <= 0) {
+      const error = new Error('ECB returned an invalid CZK exchange rate')
+      error.status = 502
+      throw error
+    }
+    return { rate, date }
+  }
+
+  function validStoredExchangeRate(value) {
+    return isObject(value) && Number.isFinite(value.rate) && value.rate > 0 && /^\d{4}-\d{2}-\d{2}$/.test(value.date) && typeof value.fetchedAt === 'string' && Number.isFinite(Date.parse(value.fetchedAt))
+  }
+
+  async function readStoredExchangeRate() {
+    if (exchangeRateCache) return exchangeRateCache
+    try {
+      const stored = JSON.parse(await readFile(exchangeRateFile, 'utf8'))
+      if (!validStoredExchangeRate(stored)) throw new Error('Stored exchange rate has an invalid structure')
+      exchangeRateCache = stored
+      return stored
+    } catch (error) {
+      if (error?.code === 'ENOENT') return null
+      throw error
+    }
+  }
+
+  async function persistExchangeRate(value) {
+    await mkdir(dataDir, { recursive: true })
+    const temporaryFile = `${exchangeRateFile}.${process.pid}.${Date.now()}.tmp`
+    await writeFile(temporaryFile, `${JSON.stringify(value)}\n`, { encoding: 'utf8', mode: 0o600 })
+    await rename(temporaryFile, exchangeRateFile)
+    exchangeRateCache = value
+    return value
+  }
+
+  async function fetchExchangeRate() {
+    const response = await fetchImpl(ECB_DAILY_RATES_URL, {
+      headers: { 'User-Agent': 'Grocy-Homie/1.7 (https://github.com/BeefyDaddy2510/kanban-grocery)' },
+      signal: AbortSignal.timeout(8000),
+    })
+    if (!response.ok) {
+      const error = new Error(`ECB returned ${response.status}`)
+      error.status = 502
+      throw error
+    }
+    const parsed = parseExchangeRate(await response.text())
+    return persistExchangeRate({ ...parsed, fetchedAt: new Date().toISOString(), source: 'ecb' })
+  }
+
+  async function getExchangeRate() {
+    const cached = await readStoredExchangeRate()
+    if (cached && Date.now() - Date.parse(cached.fetchedAt) < exchangeRateCacheTtl) return { ...cached, stale: false }
+    if (!exchangeRateRefresh) {
+      exchangeRateRefresh = fetchExchangeRate().finally(() => { exchangeRateRefresh = null })
+    }
+    try {
+      return { ...await exchangeRateRefresh, stale: false }
+    } catch (error) {
+      if (cached) return { ...cached, stale: true }
+      if (!error.status) error.status = 502
+      throw error
+    }
   }
 
   async function readStoredState() {
@@ -202,7 +280,7 @@ export function createAppServer({
     }
   }
 
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
     try {
       const pathname = new URL(request.url || '/', 'http://localhost').pathname
 
@@ -234,6 +312,15 @@ export function createAppServer({
         return
       }
 
+      if (pathname.endsWith('/api/exchange-rate')) {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { Allow: 'GET' }).end()
+          return
+        }
+        sendJson(response, 200, await getExchangeRate())
+        return
+      }
+
       const productMatch = pathname.match(/\/api\/products\/(\d+)$/)
       if (productMatch) {
         if (request.method !== 'GET') {
@@ -259,6 +346,8 @@ export function createAppServer({
       sendJson(response, error?.status || 500, { error: error?.status ? error.message : 'Internal server error' })
     }
   })
+  server.refreshExchangeRate = getExchangeRate
+  return server
 }
 
 export async function startServer(options = {}) {
@@ -268,6 +357,11 @@ export async function startServer(options = {}) {
     server.once('error', rejectListen)
     server.listen(port, '0.0.0.0', resolveListen)
   })
+  const refreshExchangeRate = () => server.refreshExchangeRate().catch(error => console.error('Unable to refresh the ECB exchange rate', error))
+  void refreshExchangeRate()
+  const exchangeRateTimer = setInterval(refreshExchangeRate, EXCHANGE_RATE_CACHE_TTL)
+  exchangeRateTimer.unref?.()
+  server.once('close', () => clearInterval(exchangeRateTimer))
   console.log(`Grocy Homie is listening on port ${port}`)
   return server
 }

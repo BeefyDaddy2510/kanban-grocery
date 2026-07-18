@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.7.3
+
+- Kurz EUR/CZK se nově načítá přes backend aplikace, takže jej Home Assistant ingress neblokuje pravidly CORS.
+- Backend kontroluje nový kurz ECB každých šest hodin a poslední úspěšnou hodnotu uchovává v perzistentních datech.
+- Při dočasném výpadku ECB aplikace bezpečně použije poslední známý kurz.
+
 ## 1.7.2
 
 - Položky v nákupních seznamech lze nově upravit včetně názvu, množství, jednotky, ceny, minima a převodu do zásob.

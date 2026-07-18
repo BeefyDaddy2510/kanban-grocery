@@ -111,3 +111,41 @@ test('validates EAN before calling Open Food Facts', async t => {
   const response = await fetch(`http://127.0.0.1:${port}/api/products/123`)
   assert.equal(response.status, 400)
 })
+
+test('fetches, caches and persists the daily ECB exchange rate', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'grocy-homie-rate-'))
+  const dataDir = join(root, 'data')
+  let calls = 0
+  const fetchRate = async (url, options) => {
+    calls += 1
+    assert.match(url, /ecb\.europa\.eu/)
+    assert.match(options.headers['User-Agent'], /Grocy-Homie/)
+    return new Response(`<?xml version="1.0"?><Envelope><Cube><Cube time='2026-07-17'><Cube currency='CZK' rate='24.205'/></Cube></Cube></Envelope>`, { status: 200, headers: { 'Content-Type': 'text/xml' } })
+  }
+  const first = createAppServer({ dataDir, staticDir: tmpdir(), fetchImpl: fetchRate })
+  await new Promise(resolve => first.listen(0, '127.0.0.1', resolve))
+  const firstUrl = `http://127.0.0.1:${first.address().port}`
+  let response = await fetch(`${firstUrl}/api/exchange-rate`)
+  assert.equal(response.status, 200)
+  const current = await response.json()
+  assert.equal(current.rate, 24.205)
+  assert.equal(current.date, '2026-07-17')
+  assert.equal(current.source, 'ecb')
+  assert.equal(current.stale, false)
+  assert.equal(Number.isFinite(Date.parse(current.fetchedAt)), true)
+  response = await fetch(`${firstUrl}/api/exchange-rate`)
+  assert.equal(response.status, 200)
+  assert.equal(calls, 1, 'fresh ECB response should be cached')
+  await new Promise(resolve => first.close(resolve))
+
+  const second = createAppServer({ dataDir, staticDir: tmpdir(), exchangeRateCacheTtl: 0, fetchImpl: async () => { throw new Error('ECB unavailable') } })
+  await new Promise(resolve => second.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => second.close(resolve)))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  response = await fetch(`http://127.0.0.1:${second.address().port}/api/exchange-rate`)
+  const fallback = await response.json()
+  assert.equal(response.status, 200)
+  assert.equal(fallback.rate, 24.205)
+  assert.equal(fallback.date, '2026-07-17')
+  assert.equal(fallback.stale, true)
+})
