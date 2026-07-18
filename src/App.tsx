@@ -2,9 +2,9 @@ import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, ty
 import type { IScannerControls } from '@zxing/browser'
 import {
   AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
-  ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard,
+  ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, LayoutDashboard, LoaderCircle,
   ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, Scale, ScanLine, Search, ShoppingBasket,
-  QrCode, Settings, Snowflake, Sun, Trash2, X,
+  QrCode, ReceiptText, Settings, Snowflake, Sun, Trash2, Upload, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
 import { FOOD_CATALOG_SEED_VERSION, stapleFoodProducts } from './foodCatalog'
@@ -28,6 +28,7 @@ const STORE_KEY = 'domovka-data-v1'
 const SETTINGS_KEY = 'grocy-homie-settings-v1'
 const STATE_API_URL = new URL('api/state', document.baseURI).toString()
 const EXCHANGE_RATE_API_URL = new URL('api/exchange-rate', document.baseURI).toString()
+const RECEIPT_OCR_API_URL = new URL('api/receipt-ocr', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
 const EXCHANGE_RATE_REFRESH_MS = 6 * 60 * 60 * 1000
 const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
@@ -368,7 +369,7 @@ function App() {
     weight: <WeightTrackingPage data={data} setData={setData} notify={notify} />,
     pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
-    shopping: <Shopping data={data} setData={setData} money={money} open={setModal} notify={notify} />,
+    shopping: <Shopping data={data} settings={settings} setData={setData} money={money} open={setModal} notify={notify} />,
     recipes: <Recipes data={data} setData={setData} notify={notify} go={go} open={() => { setEditingRecipe(null); setModal('recipe') }} edit={recipe => { setEditingRecipe(recipe); setModal('recipe') }} />,
     todos: <Todos data={data} setData={setData} toggle={toggleTodo} open={() => setModal('todo')} />,
     settings: <SettingsPage settings={settings} setSettings={setSettings} setCurrency={setCurrency} notify={notify} changeLanguage={changeLanguage} />,
@@ -498,7 +499,7 @@ function Freezer({ data, setData, open }: { data: AppData; setData: React.Dispat
   </>
 }
 
-function Shopping({ data, setData, money, open, notify }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
+function Shopping({ data, settings, setData, money, open, notify }: { data: AppData; settings: SiteSettings; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
   const { t } = useI18n()
   const activeLists = data.shoppingLists.filter(l => !l.archived)
   const archivedLists = data.shoppingLists.filter(l => l.archived)
@@ -506,8 +507,11 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
   const [showArchived, setShowArchived] = useState(false)
   const [newListOpen, setNewListOpen] = useState(false)
   const [finishOpen, setFinishOpen] = useState(false)
+  const [receiptOpen, setReceiptOpen] = useState(false)
   const [finishSelection, setFinishSelection] = useState<Set<string>>(new Set())
   const [quickItemName, setQuickItemName] = useState('')
+  const [quickItemQuantity, setQuickItemQuantity] = useState('')
+  const [quickItemPrice, setQuickItemPrice] = useState('')
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null)
   const [draggingListId, setDraggingListId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<ShoppingListDrop | null>(null)
@@ -614,9 +618,13 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
     const name = quickItemName.trim()
     if (!name) return
     const product = data.products.find(candidate => candidate.name.toLocaleLowerCase() === name.toLocaleLowerCase())
-    const item: ShoppingItem = { id: uid(), name, quantity: 1, unit: 'ks', checked: false, addToPantry: false, productId: product?.id, barcode: product?.ean, image: product?.image, priceCzk: product?.priceCzk }
+    const enteredQuantity = Number(quickItemQuantity)
+    const enteredPrice = Number(quickItemPrice)
+    const item: ShoppingItem = { id: uid(), name, quantity: quickItemQuantity && enteredQuantity > 0 ? enteredQuantity : 1, quantitySpecified: Boolean(quickItemQuantity), unit: 'ks', checked: false, addToPantry: false, productId: product?.id, barcode: product?.ean, image: product?.image, priceCzk: quickItemPrice && enteredPrice >= 0 ? enteredPrice : product?.priceCzk }
     setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id === list.id ? { ...candidate, items: [...candidate.items, item] } : candidate) }))
     setQuickItemName('')
+    setQuickItemQuantity('')
+    setQuickItemPrice('')
     notify(t('shopping.quickAdded', { name }))
   }
   const toggle = (id: string) => setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id !== list.id ? l : { ...l, items: l.items.map(i => i.id === id ? { ...i, checked: !i.checked } : i) }) }))
@@ -635,25 +643,31 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
     setFinishSelection(new Set(checkedItems.filter(item => item.addToPantry).map(item => item.id)))
     setFinishOpen(true)
   }
-  const finish = () => {
-    const purchased = checkedItems.filter(item => finishSelection.has(item.id))
-    setData(p => ({ ...p, pantry: [...p.pantry, ...purchased.map<PantryItem>(i => { const product = p.products.find(candidate => candidate.id === i.productId); return { id: uid(), name: i.name, category: product?.category || 'Z nákupu', location: 'Spíž', quantity: i.quantity, minimum: i.kanbanMinimum ?? 0, unit: i.unit, priceCzk: i.priceCzk ?? product?.priceCzk ?? 0, purchasedAt: today(), productId: product?.id, barcode: i.barcode || product?.ean, image: i.image || product?.image, nutritionPer100g: product?.nutritionPer100g, portionGrams: product?.packageGrams } })], shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, items: l.items.filter(i => !i.checked) } : l) }))
+  const finish = (completedItems: ShoppingItem[]) => {
+    const purchased = completedItems.filter(item => finishSelection.has(item.id))
+    setData(p => ({ ...p, pantry: [...p.pantry, ...purchased.map<PantryItem>(i => { const product = p.products.find(candidate => candidate.id === i.productId); return { id: uid(), name: i.name, category: product?.category || 'Z nákupu', location: settings.defaultLocation, quantity: i.quantity, minimum: i.kanbanMinimum ?? 0, unit: i.unit, priceCzk: i.priceCzk ?? product?.priceCzk ?? 0, purchasedAt: today(), productId: product?.id, barcode: i.barcode || product?.ean, image: i.image || product?.image, nutritionPer100g: product?.nutritionPer100g, portionGrams: product?.packageGrams } })], shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, items: l.items.filter(i => !i.checked) } : l) }))
     setFinishOpen(false)
     notify(purchased.length === 1 ? t('shopping.finishedOne') : t('shopping.finishedMany', { count: purchased.length }))
+  }
+  const importReceiptItems = (items: Array<Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'priceCzk'>>) => {
+    setData(current => ({ ...current, pantry: [...current.pantry, ...items.map<PantryItem>(item => { const product = current.products.find(candidate => candidate.name.toLocaleLowerCase() === item.name.toLocaleLowerCase()); return { id: uid(), name: item.name, category: product?.category || settings.defaultCategory, location: settings.defaultLocation, quantity: item.quantity, minimum: 0, unit: item.unit, priceCzk: item.priceCzk ?? product?.priceCzk ?? 0, purchasedAt: today(), productId: product?.id, barcode: product?.ean, image: product?.image, nutritionPer100g: product?.nutritionPer100g, portionGrams: product?.packageGrams } })] }))
+    setReceiptOpen(false)
+    notify(t('receipt.saved', { count: items.length }))
   }
   const total = list.items.reduce((s, i) => s + (i.priceCzk ?? 0) * i.quantity, 0)
   return <>
     <PageIntro title={t('shopping.title')} subtitle={t('shopping.subtitle')} button={t('pantry.add')} icon={<Plus />} onClick={() => open('shopping')} />
     <div className={`shopping-tabs ${draggingListId ? 'is-reordering' : ''}`} ref={tabsRef}>{activeLists.map(l => <button key={l.id} data-list-id={l.id} className={[l.id === list.id ? 'active' : '', l.id === draggingListId ? 'is-dragging' : '', dropTarget?.id === l.id ? `drop-${dropTarget.position}` : ''].filter(Boolean).join(' ')} title={t('shopping.reorderHint')} aria-grabbed={l.id === draggingListId} onPointerDown={event => startListDrag(event, l.id)} onPointerMove={moveListDrag} onPointerUp={finishListDrag} onPointerCancel={cancelListDrag} onContextMenu={event => event.preventDefault()} onClick={event => { if (suppressListClickRef.current) { event.preventDefault(); return } setActive(l.id) }}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button>)}<button className="new-list" onClick={() => setNewListOpen(true)}><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive', { count: archivedLists.length })}</button>}</div>
     {showArchived && <ArchivedLists lists={archivedLists} restore={restoreList} />}
-    <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary" onClick={archiveList}><Archive size={17} />{t('shopping.archiveAction')}</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />{t('shopping.scan')}</button></div></div>
-      <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addQuickItem() } }} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
+    <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary receipt-button" onClick={() => setReceiptOpen(true)}><ReceiptText size={18} />{t('receipt.upload')}</button><button className="secondary" onClick={archiveList}><Archive size={17} />{t('shopping.archiveAction')}</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />{t('shopping.scan')}</button></div></div>
+      <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input className="quick-name" list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><input value={quickItemQuantity} onChange={event => setQuickItemQuantity(event.target.value)} type="number" min="0.01" step="0.01" placeholder={t('shopping.quickQuantity')} aria-label={t('shopping.quickQuantity')} /><input value={quickItemPrice} onChange={event => setQuickItemPrice(event.target.value)} type="number" min="0" step="0.01" placeholder={t('shopping.quickPrice')} aria-label={t('shopping.quickPrice')} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
       <datalist id="shopping-quick-products">{data.products.map(product => <option value={product.name} key={product.id} />)}</datalist>
       <div className="shopping-progress"><div><span>{t('shopping.progress')}</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
       <div className="shopping-items">{list.items.map(item => <div key={item.id} className={item.checked ? 'checked' : ''}><label className="shopping-item-toggle"><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} aria-label={item.name} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} image={item.image} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ` · ${t('shopping.preselected')}` : ''}</small></span></label><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : t('shopping.enterPrice')}</span><div className="shopping-item-actions"><button className="icon-btn" type="button" onClick={() => setEditingItem(item)} aria-label={`${t('common.edit')}: ${item.name}`} title={t('common.edit')}><Pencil size={15} /></button><button className="icon-btn delete-item" type="button" onClick={() => removeItem(item)} aria-label={`${t('common.delete')}: ${item.name}`} title={t('common.delete')}><Trash2 size={15} /></button></div></div>)}</div>
       <div className="shopping-summary"><div><span>{t('shopping.spending')}</span><strong>{money(total)}</strong></div><button className="primary" disabled={!checkedItems.length} onClick={openFinish}><CheckCircle2 size={18} />{t('shopping.done')}</button></div>
     </section>
     {finishOpen && <ShoppingFinishDialog items={checkedItems} selected={finishSelection} setSelected={setFinishSelection} close={() => setFinishOpen(false)} confirm={finish} />}
+    {receiptOpen && <ReceiptImportDialog products={data.products} close={() => setReceiptOpen(false)} save={importReceiptItems} />}
     {newListOpen && <NewShoppingListDialog close={() => setNewListOpen(false)} save={createList} />}
     {editingItem && <ShoppingItemDialog item={editingItem} close={() => setEditingItem(null)} save={updateItem} />}
   </>
@@ -661,7 +675,7 @@ function Shopping({ data, setData, money, open, notify }: { data: AppData; setDa
 
 function ShoppingItemDialog({ item, close, save }: { item: ShoppingItem; close: () => void; save: (item: ShoppingItem) => void }) {
   const { t } = useI18n()
-  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.title')}</span><h2>{t('modal.editItem')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const price = String(form.get('price')).trim(); const minimum = String(form.get('minimum')).trim(); save({ ...item, name: String(form.get('name')).trim(), quantity: Number(form.get('quantity')), unit: String(form.get('unit')) as Unit, priceCzk: price ? Number(price) : undefined, kanbanMinimum: minimum ? Number(minimum) : undefined, addToPantry: form.get('addToPantry') === 'on' }) }}>
+  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.title')}</span><h2>{t('modal.editItem')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><form onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const price = String(form.get('price')).trim(); const minimum = String(form.get('minimum')).trim(); save({ ...item, name: String(form.get('name')).trim(), quantity: Number(form.get('quantity')), quantitySpecified: true, unit: String(form.get('unit')) as Unit, priceCzk: price ? Number(price) : undefined, kanbanMinimum: minimum ? Number(minimum) : undefined, addToPantry: form.get('addToPantry') === 'on' }) }}>
     <Field label={t('modal.name')}><input name="name" required autoFocus defaultValue={item.name} placeholder={t('modal.whatBuy')} /></Field>
     <div className="form-grid"><Field label={t('settings.quantity')}><input name="quantity" type="number" min="0" step="0.1" defaultValue={item.quantity} required /></Field><Field label={t('settings.unit')}><UnitSelect defaultValue={item.unit} /></Field><Field label={t('modal.estimatedPrice')}><input name="price" type="number" min="0" step="0.01" defaultValue={item.priceCzk} /></Field><Field label={t('settings.minimum')}><input name="minimum" type="number" min="0" step="1" defaultValue={item.kanbanMinimum} /></Field></div>
     <label className="switch-row"><input type="checkbox" name="addToPantry" defaultChecked={item.addToPantry} /><span />{t('modal.addToPantry')}</label>
@@ -682,10 +696,47 @@ function NewShoppingListDialog({ close, save }: { close: () => void; save: (draf
   </form></div></div>
 }
 
-function ShoppingFinishDialog({ items, selected, setSelected, close, confirm }: { items: ShoppingItem[]; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>; close: () => void; confirm: () => void }) {
+function ShoppingFinishDialog({ items, selected, setSelected, close, confirm }: { items: ShoppingItem[]; selected: Set<string>; setSelected: Dispatch<SetStateAction<Set<string>>>; close: () => void; confirm: (items: ShoppingItem[]) => void }) {
   const { t } = useI18n()
+  const [drafts, setDrafts] = useState(() => items.map(item => ({ ...item })))
   const toggle = (id: string) => setSelected(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
-  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal finish-shopping-modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.finishEyebrow')}</span><h2>{t('shopping.finishTitle')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><div className="finish-shopping-content"><p>{t('shopping.finishText')}</p><div className="finish-shopping-list">{items.map(item => <label key={item.id}><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} /><span className="custom-check"><Check size={15} /></span><ProductIcon name={item.name} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}</small></span></label>)}</div><div className="finish-shopping-note"><CheckCircle2 size={17} />{t('shopping.finishNote', { selected: selected.size, total: items.length })}</div><div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('common.back')}</button><button type="button" className="primary" onClick={confirm}><CheckCircle2 size={18} />{t('shopping.confirm')}</button></div></div></div></div>
+  const update = (id: string, changes: Partial<ShoppingItem>) => setDrafts(current => current.map(item => item.id === id ? { ...item, ...changes } : item))
+  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && close()}><div className="modal finish-shopping-modal"><div className="modal-head"><div><span className="eyebrow">{t('shopping.finishEyebrow')}</span><h2>{t('shopping.finishTitle')}</h2></div><button className="icon-btn" onClick={close} aria-label={t('common.close')}><X size={20} /></button></div><div className="finish-shopping-content"><p>{t('shopping.finishText')}</p><div className="finish-shopping-list">{drafts.map(item => <div className="finish-shopping-row" key={item.id}><label><input type="checkbox" checked={selected.has(item.id)} onChange={() => toggle(item.id)} /><span className="custom-check"><Check size={15} /></span><ProductIcon name={item.name} /><span className="grow"><strong>{item.name}</strong>{(item.quantitySpecified === false || item.priceCzk === undefined) && <small>{t('shopping.completeMissing')}</small>}</span></label><div className="finish-shopping-values"><input type="number" min="0.01" step="0.01" value={item.quantitySpecified === false ? '' : item.quantity} onChange={event => update(item.id, { quantity: Number(event.target.value) || 1, quantitySpecified: Boolean(event.target.value) })} placeholder={t('shopping.quantityShort')} aria-label={`${t('settings.quantity')}: ${item.name}`} /><span>{item.unit}</span><input type="number" min="0" step="0.01" value={item.priceCzk ?? ''} onChange={event => update(item.id, { priceCzk: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={t('shopping.priceShort')} aria-label={`${t('modal.priceCzk')}: ${item.name}`} /></div></div>)}</div><div className="finish-shopping-note"><CheckCircle2 size={17} />{t('shopping.finishNote', { selected: selected.size, total: items.length })}</div><div className="modal-actions"><button type="button" className="secondary" onClick={close}>{t('common.back')}</button><button type="button" className="primary" onClick={() => confirm(drafts)}><CheckCircle2 size={18} />{t('shopping.confirm')}</button></div></div></div></div>
+}
+
+type ReceiptDraft = Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'priceCzk'> & { id: string; selected: boolean }
+
+function ReceiptImportDialog({ products, close, save }: { products: FoodProduct[]; close: () => void; save: (items: Array<Pick<ShoppingItem, 'name' | 'quantity' | 'unit' | 'priceCzk'>>) => void }) {
+  const { t } = useI18n()
+  const [fileName, setFileName] = useState('')
+  const [items, setItems] = useState<ReceiptDraft[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const selected = items.filter(item => item.selected && item.name.trim())
+  const recognize = async (file: File) => {
+    setFileName(file.name)
+    setLoading(true)
+    setError('')
+    setItems([])
+    try {
+      const response = await fetch(RECEIPT_OCR_API_URL, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+      const result = await response.json() as { items?: Array<{ name?: string; quantity?: number; unit?: string; priceCzk?: number }>; error?: string }
+      if (!response.ok) throw new Error(result.error || t('receipt.failed'))
+      const recognized = (result.items || []).filter(item => item.name).map<ReceiptDraft>(item => {
+        const product = products.find(candidate => candidate.name.toLocaleLowerCase() === item.name!.toLocaleLowerCase())
+        return { id: uid(), selected: true, name: item.name!.trim(), quantity: Number(item.quantity) > 0 ? Number(item.quantity) : 1, unit: units.includes(item.unit as Unit) ? item.unit as Unit : 'ks', priceCzk: Number.isFinite(item.priceCzk) ? item.priceCzk : product?.priceCzk }
+      })
+      setItems(recognized)
+      if (!recognized.length) setError(t('receipt.noneFound'))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : t('receipt.failed'))
+    } finally {
+      setLoading(false)
+    }
+  }
+  const update = (id: string, changes: Partial<ReceiptDraft>) => setItems(current => current.map(item => item.id === id ? { ...item, ...changes } : item))
+  const remove = (id: string) => setItems(current => current.filter(item => item.id !== id))
+  return <div className="modal-backdrop" onMouseDown={event => event.target === event.currentTarget && !loading && close()}><div className="modal receipt-modal"><div className="modal-head"><div><span className="eyebrow">OCR</span><h2>{t('receipt.title')}</h2></div><button className="icon-btn" onClick={close} disabled={loading} aria-label={t('common.close')}><X size={20} /></button></div><div className="receipt-content"><p>{t('receipt.hint')}</p><label className={`receipt-dropzone ${loading ? 'is-loading' : ''}`}><input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={loading} onChange={event => { const file = event.target.files?.[0]; if (file) void recognize(file); event.currentTarget.value = '' }} />{loading ? <LoaderCircle className="spin" size={28} /> : <Upload size={28} />}<strong>{loading ? t('receipt.recognizing') : t('receipt.choose')}</strong><small>{fileName || t('receipt.formats')}</small></label>{error && <div className="receipt-error"><AlertTriangle size={17} />{error}</div>}{items.length > 0 && <><div className="receipt-result-head"><div><strong>{t('receipt.result')}</strong><small>{t('receipt.review')}</small></div><button type="button" className="secondary" onClick={() => setItems(current => [...current, { id: uid(), selected: true, name: '', quantity: 1, unit: 'ks', priceCzk: undefined }])}><Plus size={16} />{t('receipt.addRow')}</button></div><div className="receipt-items">{items.map(item => <div className="receipt-item" key={item.id}><label className="receipt-select"><input type="checkbox" checked={item.selected} onChange={event => update(item.id, { selected: event.target.checked })} /><span className="custom-check"><Check size={15} /></span></label><input className="receipt-name" value={item.name} onChange={event => update(item.id, { name: event.target.value })} aria-label={t('modal.name')} placeholder={t('modal.name')} /><input type="number" min="0.01" step="0.01" value={item.quantity} onChange={event => update(item.id, { quantity: Number(event.target.value) || 1 })} aria-label={t('settings.quantity')} /><select value={item.unit} onChange={event => update(item.id, { unit: event.target.value as Unit })} aria-label={t('settings.unit')}>{units.map(unit => <option key={unit}>{unit}</option>)}</select><input type="number" min="0" step="0.01" value={item.priceCzk ?? ''} onChange={event => update(item.id, { priceCzk: event.target.value === '' ? undefined : Number(event.target.value) })} aria-label={t('modal.priceCzk')} placeholder={t('shopping.priceShort')} /><button type="button" className="icon-btn" onClick={() => remove(item.id)} aria-label={t('common.delete')}><Trash2 size={15} /></button></div>)}</div></>}<div className="modal-actions"><button type="button" className="secondary" onClick={close} disabled={loading}>{t('common.cancel')}</button><button type="button" className="primary" disabled={loading || !selected.length} onClick={() => save(selected.map(({ name, quantity, unit, priceCzk }) => ({ name: name.trim(), quantity, unit, priceCzk })))}><Package size={18} />{t('receipt.save', { count: selected.length })}</button></div></div></div></div>
 }
 
 function ArchivedLists({ lists, restore }: { lists: AppData['shoppingLists']; restore: (id: string) => void }) {

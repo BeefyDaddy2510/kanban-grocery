@@ -20,6 +20,8 @@ Projekt je inspirovaný aplikací Grocy a funguje bez samostatného účtu. V Do
 - upravitelné kategorie a umístění položek
 - mrazák s hlídáním doporučené doby pro nejlepší kvalitu
 - nákupní seznamy podle obchodu a typu, průběžná cena a selektivní převod zakoupených položek do zásob
+- rychlé přidávání nákupních položek s nepovinným množstvím a cenou a jejich doplnění při dokončení nákupu
+- lokální OCR fotografií a PDF účtenek s kontrolou vytěžených názvů, množství a cen před uložením do zásob
 - archivace a obnovení nákupních seznamů
 - vlastní editovatelné recepty s ingrediencemi, postupem, štítky, výběrem surovin ze zásob a odesláním ingrediencí na nákupní seznam
 - úkoly a měsíční kalendář

@@ -24,6 +24,8 @@ Ingress běží pod zabezpečeným přístupem Home Assistantu. Dostupnost fotoa
 
 Od verze 1.4.0 lze naskenovaný EAN spárovat s vlastní databází potravin nebo veřejným katalogem Open Food Facts a produkt rovnou přidat do zásob, mrazáku či nákupního seznamu. Potraviny uložené v domácím katalogu mají před externím API vždy přednost.
 
+Od verze 1.8.0 lze v sekci **Nákupy** nahrát fotografii nebo PDF účtenky. Lokální OCR s podporou češtiny a angličtiny vytěží názvy položek, množství a ceny. Výsledek se před uložením vždy zobrazí ke kontrole; rozpoznané hodnoty lze opravit a checkboxem vybrat pouze položky, které se mají uložit do zásob. Soubor účtenky se po zpracování smaže a neposílá se do externí OCR služby.
+
 ## Sledování hmotnosti a jídelní historie
 
 V menu **Sledování hmotnosti** lze vytvořit samostatné karty členů domácnosti, nastavit cílovou váhu a denní cíle energie, sacharidů včetně cukrů, tuků, bílkovin a vlákniny. Každý den má vlastní trvale uložený jídelní přehled rozdělený na snídani, dvě svačiny, oběd a večeři.

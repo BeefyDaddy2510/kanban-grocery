@@ -1,9 +1,14 @@
 import { createServer } from 'node:http'
-import { mkdir, readFile, rename, stat, writeFile } from 'node:fs/promises'
+import { execFile as execFileCallback } from 'node:child_process'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { extname, join, normalize, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { promisify } from 'node:util'
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024
+const MAX_RECEIPT_BYTES = 15 * 1024 * 1024
+const execFile = promisify(execFileCallback)
 const EMPTY_STATE = Object.freeze({ state: null, revision: 0, updatedAt: null })
 const PRODUCT_CACHE_TTL = 24 * 60 * 60 * 1000
 const PRODUCT_NOT_FOUND_TTL = 60 * 60 * 1000
@@ -60,10 +65,117 @@ async function readBody(request) {
   }
 }
 
+async function readRawBody(request, limit = MAX_RECEIPT_BYTES) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of request) {
+    size += chunk.length
+    if (size > limit) {
+      const error = new Error('Receipt is too large (maximum is 15 MB)')
+      error.status = 413
+      throw error
+    }
+    chunks.push(chunk)
+  }
+  if (!size) {
+    const error = new Error('Receipt file is empty')
+    error.status = 400
+    throw error
+  }
+  return Buffer.concat(chunks)
+}
+
+function cleanReceiptName(value) {
+  return String(value)
+    .replace(/^\s*(?:\d{5,14}|[*#-]+)\s+/, '')
+    .replace(/\s+(?:\d+(?:[.,]\d+)?\s*(?:x|ks|pc|pcs)\s+)?\d+[.,]\d{2}\s*$/i, '')
+    .replace(/\s+[*A-D]$/i, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/^[^\p{L}]+|[^\p{L}\p{N})%.'’+&/-]+$/gu, '')
+    .trim()
+}
+
+const RECEIPT_IGNORED_LINE = /(?:^|\b)(celkem|total|subtotal|součet|suma|dph|vat|tax|základ|sazba|hotovost|cash|karta|card|vráceno|change|datum|date|čas|time|účtenka|receipt|doklad|provozovna|pokladna|pokladní|cashier|ičo|dič|děkujeme|thank you|www\.|tel\.?|otevírací)(?:\b|$)/i
+
+export function parseReceiptText(text) {
+  const sourceLines = String(text).split(/\r?\n/).map(line => line.replace(/[|_]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean)
+  const items = []
+  let pendingName = ''
+  for (const line of sourceLines) {
+    if (RECEIPT_IGNORED_LINE.test(line)) { pendingName = ''; continue }
+    const priceMatch = line.match(/(-?\d{1,6}[,.]\d{2})(?:\s*(?:Kč|CZK|EUR|€))?\s*[*A-D]?\s*$/i)
+    if (!priceMatch) {
+      const possibleName = cleanReceiptName(line)
+      pendingName = /\p{L}{2}/u.test(possibleName) && possibleName.length <= 80 ? possibleName : ''
+      continue
+    }
+
+    const totalPrice = Number(priceMatch[1].replace(',', '.'))
+    if (!Number.isFinite(totalPrice) || totalPrice < 0) continue
+    const beforePrice = line.slice(0, priceMatch.index).trim()
+    const quantityMatch = beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|ks|pc|pcs|bal\.?)(?:\s+(\d{1,6}[,.]\d{2}))?\s*$/i)
+      || beforePrice.match(/(?:^|\s)(\d+(?:[.,]\d+)?)\s*(?:x|ks|pc|pcs|bal\.?)\s+/i)
+    const quantity = quantityMatch ? Number(quantityMatch[1].replace(',', '.')) : 1
+    const explicitUnitPrice = quantityMatch?.[2] ? Number(quantityMatch[2].replace(',', '.')) : null
+    let namePart = quantityMatch?.index !== undefined ? beforePrice.slice(0, quantityMatch.index).trim() : beforePrice
+    if (!namePart && pendingName) namePart = pendingName
+    const name = cleanReceiptName(namePart)
+    pendingName = ''
+    if (!/\p{L}{2}/u.test(name) || name.length > 80 || !Number.isFinite(quantity) || quantity <= 0 || quantity > 999) continue
+    const priceCzk = explicitUnitPrice && explicitUnitPrice >= 0 ? explicitUnitPrice : totalPrice / quantity
+    items.push({ name, quantity, unit: 'ks', priceCzk: Math.round(priceCzk * 100) / 100 })
+  }
+  return items
+}
+
+function detectReceiptType(buffer, contentType = '') {
+  const type = String(contentType).split(';')[0].trim().toLowerCase()
+  if (buffer.subarray(0, 4).toString() === '%PDF') return { extension: '.pdf', pdf: true }
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) return { extension: '.jpg', pdf: false }
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return { extension: '.png', pdf: false }
+  if (buffer.subarray(0, 4).toString() === 'RIFF' && buffer.subarray(8, 12).toString() === 'WEBP') return { extension: '.webp', pdf: false }
+  if (type === 'application/pdf') return { extension: '.pdf', pdf: true }
+  const error = new Error('Use a JPG, PNG, WebP or PDF receipt')
+  error.status = 415
+  throw error
+}
+
+async function runReceiptOcr(buffer, contentType) {
+  const detected = detectReceiptType(buffer, contentType)
+  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'grocy-homie-receipt-'))
+  try {
+    const inputPath = join(temporaryDirectory, `receipt${detected.extension}`)
+    await writeFile(inputPath, buffer, { mode: 0o600 })
+    let imagePaths = [inputPath]
+    if (detected.pdf) {
+      const outputPrefix = join(temporaryDirectory, 'page')
+      await execFile('pdftoppm', ['-jpeg', '-r', '220', '-f', '1', '-l', '5', inputPath, outputPrefix], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
+      imagePaths = (await readdir(temporaryDirectory)).filter(name => /^page-\d+\.jpg$/i.test(name)).sort().map(name => join(temporaryDirectory, name))
+      if (!imagePaths.length) throw new Error('PDF contains no readable pages')
+    }
+    const texts = []
+    for (const imagePath of imagePaths) {
+      const { stdout } = await execFile('tesseract', [imagePath, 'stdout', '-l', 'ces+eng', '--psm', '6'], { timeout: 120000, maxBuffer: 4 * 1024 * 1024 })
+      texts.push(stdout)
+    }
+    const text = texts.join('\n')
+    return { text, items: parseReceiptText(text) }
+  } catch (error) {
+    if (!error.status) {
+      error.status = error.code === 'ENOENT' ? 503 : 422
+      error.message = error.code === 'ENOENT' ? 'Receipt OCR is not installed in this image' : `Receipt could not be read: ${error.message}`
+    }
+    throw error
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true })
+  }
+}
+
 export function createAppServer({
   dataDir = process.env.DATA_DIR || '/data',
   staticDir = process.env.STATIC_DIR || resolve('dist'),
   fetchImpl = globalThis.fetch,
+  receiptOcr = runReceiptOcr,
   exchangeRateCacheTtl = EXCHANGE_RATE_CACHE_TTL,
 } = {}) {
   const stateFile = join(dataDir, 'grocy-homie-state.json')
@@ -318,6 +430,17 @@ export function createAppServer({
           return
         }
         sendJson(response, 200, await getExchangeRate())
+        return
+      }
+
+      if (pathname.endsWith('/api/receipt-ocr')) {
+        if (request.method !== 'POST') {
+          response.writeHead(405, { Allow: 'POST' }).end()
+          return
+        }
+        const receipt = await readRawBody(request)
+        const result = await receiptOcr(receipt, request.headers['content-type'] || '')
+        sendJson(response, 200, { items: Array.isArray(result?.items) ? result.items : [], text: String(result?.text || '') })
         return
       }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0
+
+- Rychlé přidání položky do nákupního seznamu nově umožňuje nepovinně zadat množství a cenu za kus.
+- Při dokončení nákupu lze u všech položek doplnit nebo opravit množství a cenu ještě před převodem do zásob.
+- Fotografie a PDF účtenek lze lokálně zpracovat pomocí OCR v češtině a angličtině; rozpoznané názvy, množství a ceny lze opravit a jednotlivě vybrat pro uložení do zásob.
+- Účtenky se zpracovávají pouze uvnitř Grocy Homie a neposílají se do externí OCR služby.
+
 ## 1.7.3
 
 - Kurz EUR/CZK se nově načítá přes backend aplikace, takže jej Home Assistant ingress neblokuje pravidly CORS.

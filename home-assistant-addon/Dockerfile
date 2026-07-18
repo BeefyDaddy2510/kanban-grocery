@@ -11,6 +11,7 @@ RUN npm run build
 FROM node:22-alpine
 
 WORKDIR /app
+RUN apk add --no-cache poppler-utils tesseract-ocr tesseract-ocr-data-ces tesseract-ocr-data-eng
 COPY server.mjs ./server.mjs
 COPY --from=build /app/dist ./dist
 

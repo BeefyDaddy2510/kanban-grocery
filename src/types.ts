@@ -136,6 +136,7 @@ export interface ShoppingItem {
   unit: Unit
   checked: boolean
   priceCzk?: number
+  quantitySpecified?: boolean
   addToPantry: boolean
   kanbanMinimum?: number
   productId?: string

@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
-import { createAppServer } from '../server.mjs'
+import { createAppServer, parseReceiptText } from '../server.mjs'
 
 async function startTestServer(dataDir, staticDir) {
   const server = createAppServer({ dataDir, staticDir })
@@ -110,6 +110,34 @@ test('validates EAN before calling Open Food Facts', async t => {
   const { port } = app.address()
   const response = await fetch(`http://127.0.0.1:${port}/api/products/123`)
   assert.equal(response.status, 400)
+})
+
+test('parses receipt lines into item names, quantities and unit prices', () => {
+  const items = parseReceiptText(`SUPERMARKET\nJABLKA 2 x 19,90 39,80\nMLEKO 1 ks 24,90\nROHLIK\n3 x 3,50 10,50\nCELKEM 75,20\nDPH 12,34`)
+  assert.deepEqual(items, [
+    { name: 'JABLKA', quantity: 2, unit: 'ks', priceCzk: 19.9 },
+    { name: 'MLEKO', quantity: 1, unit: 'ks', priceCzk: 24.9 },
+    { name: 'ROHLIK', quantity: 3, unit: 'ks', priceCzk: 3.5 },
+  ])
+})
+
+test('accepts a receipt upload and returns OCR items', async t => {
+  let uploaded
+  const app = createAppServer({
+    dataDir: tmpdir(),
+    staticDir: tmpdir(),
+    receiptOcr: async (buffer, contentType) => {
+      uploaded = { buffer, contentType }
+      return { text: 'MLÉKO 24,90', items: [{ name: 'MLÉKO', quantity: 1, unit: 'ks', priceCzk: 24.9 }] }
+    },
+  })
+  await new Promise(resolve => app.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => app.close(resolve)))
+  const response = await fetch(`http://127.0.0.1:${app.address().port}/api/receipt-ocr`, { method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: Buffer.from([0xff, 0xd8, 0xff]) })
+  assert.equal(response.status, 200)
+  assert.equal(uploaded.contentType, 'image/jpeg')
+  assert.deepEqual([...uploaded.buffer], [0xff, 0xd8, 0xff])
+  assert.deepEqual((await response.json()).items, [{ name: 'MLÉKO', quantity: 1, unit: 'ks', priceCzk: 24.9 }])
 })
 
 test('fetches, caches and persists the daily ECB exchange rate', async t => {
