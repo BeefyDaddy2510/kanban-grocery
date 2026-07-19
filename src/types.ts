@@ -127,6 +127,7 @@ export interface FreezerItem {
   productId?: string
   barcode?: string
   image?: string
+  pantryDetails?: Pick<PantryItem, 'location' | 'minimum' | 'priceCzk' | 'purchasedAt' | 'expiresAt' | 'nutritionPer100g' | 'portionGrams'>
 }
 
 export interface ShoppingItem {

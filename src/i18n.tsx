@@ -77,6 +77,31 @@ Object.assign(messages.en, { 'nav.products': 'Food database', 'nav.weight': 'Wei
 Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank', 'nav.weight': 'Gewicht', 'nutrition.sugars': 'davon Zucker' })
 
 Object.assign(messages.cs, {
+  'inventory.allCategories': 'Všechny kategorie',
+  'inventory.noCategoryItems': 'V této kategorii nejsou žádné položky.',
+  'inventory.moveToFreezer': 'Přesunout {name} do mrazáku',
+  'inventory.moveToPantry': 'Přesunout {name} do zásob',
+  'inventory.movedToFreezer': 'Položka „{name}“ byla přesunuta do mrazáku.',
+  'inventory.movedToPantry': 'Položka „{name}“ byla přesunuta do zásob.',
+})
+Object.assign(messages.en, {
+  'inventory.allCategories': 'All categories',
+  'inventory.noCategoryItems': 'There are no items in this category.',
+  'inventory.moveToFreezer': 'Move {name} to freezer',
+  'inventory.moveToPantry': 'Move {name} to pantry',
+  'inventory.movedToFreezer': '“{name}” was moved to the freezer.',
+  'inventory.movedToPantry': '“{name}” was moved to the pantry.',
+})
+Object.assign(messages.de, {
+  'inventory.allCategories': 'Alle Kategorien',
+  'inventory.noCategoryItems': 'In dieser Kategorie gibt es keine Artikel.',
+  'inventory.moveToFreezer': '{name} in den Gefrierschrank verschieben',
+  'inventory.moveToPantry': '{name} in die Vorräte verschieben',
+  'inventory.movedToFreezer': '„{name}“ wurde in den Gefrierschrank verschoben.',
+  'inventory.movedToPantry': '„{name}“ wurde in die Vorräte verschoben.',
+})
+
+Object.assign(messages.cs, {
   'settings.version': 'Verze aplikace',
   'shopping.quickQuantity': 'Množství (nepovinné)', 'shopping.quickPrice': 'Cena / ks (nepovinná)', 'shopping.quantityShort': 'Množství', 'shopping.priceShort': 'Cena / ks', 'shopping.completeMissing': 'Doplňte množství nebo cenu, pokud je znáte.',
   'receipt.upload': 'Načíst účtenku', 'receipt.title': 'Načíst účtenku', 'receipt.hint': 'Nahrajte fotografii nebo PDF. OCR lokálně rozpozná položky, množství a ceny; před uložením vše zkontrolujte.', 'receipt.choose': 'Vybrat fotku nebo PDF účtenky', 'receipt.formats': 'JPG, PNG, WebP nebo PDF · maximálně 15 MB', 'receipt.recognizing': 'Účtenku právě rozpoznávám…', 'receipt.failed': 'Účtenku se nepodařilo rozpoznat.', 'receipt.noneFound': 'OCR nenašlo žádné položky s cenou. Zkuste ostřejší fotografii bez odlesků.', 'receipt.result': 'Rozpoznané položky', 'receipt.review': 'Upravte případné chyby a zaškrtněte, co uložit do zásob.', 'receipt.addRow': 'Přidat řádek', 'receipt.save': 'Uložit do zásob ({count})', 'receipt.saved': 'Do zásob bylo uloženo {count} položek.',

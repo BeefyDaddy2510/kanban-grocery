@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.9.0
+
+- Potraviny lze jedním tlačítkem přesouvat ze Zásob do Mrazáku i zpět.
+- Při návratu z Mrazáku do Zásob se zachovají původní cena, minimum, expirace, umístění a výživové údaje.
+- Zásoby i Mrazák lze filtrovat podle kategorie; v Zásobách se filtr kombinuje s hledáním a umístěním.
+
 ## 1.8.1
 
 - OCR nově rozlišuje produktové tabulky faktur od souhrnných částek a platebních řádků.

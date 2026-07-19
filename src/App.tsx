@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react'
 import type { IScannerControls } from '@zxing/browser'
 import {
-  AlertTriangle, Archive, ArrowRight, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
-  ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Fish, Info, LayoutDashboard, LoaderCircle,
+  AlertTriangle, Archive, ArrowRight, ArrowRightLeft, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
+  ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Filter, Fish, Info, LayoutDashboard, LoaderCircle,
   ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, Scale, ScanLine, Search, ShoppingBasket,
   QrCode, ReceiptText, Settings, Snowflake, Sun, Trash2, Upload, X,
 } from 'lucide-react'
@@ -328,6 +328,54 @@ function App() {
   const updatePantry = (id: string, delta: number) => setData(prev => ({ ...prev, pantry: prev.pantry.map(i => i.id === id ? { ...i, quantity: Math.max(0, +(i.quantity + delta).toFixed(2)) } : i) }))
   const setPantryPortion = (id: string, grams: number) => setData(prev => ({ ...prev, pantry: prev.pantry.map(i => i.id === id ? { ...i, portionGrams: Math.max(0, grams) } : i) }))
   const removePantry = (id: string) => setData(prev => ({ ...prev, pantry: prev.pantry.filter(i => i.id !== id) }))
+  const movePantryToFreezer = (item: PantryItem) => {
+    const guide = freezerGuide.find(entry => entry.category === item.category)
+    const freezerItem: FreezerItem = {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      quantity: item.quantity,
+      unit: item.unit,
+      frozenAt: today(),
+      recommendedMonths: guide?.max ?? 6,
+      productId: item.productId,
+      barcode: item.barcode,
+      image: item.image,
+      pantryDetails: {
+        location: item.location,
+        minimum: item.minimum,
+        priceCzk: item.priceCzk,
+        purchasedAt: item.purchasedAt,
+        expiresAt: item.expiresAt,
+        nutritionPer100g: item.nutritionPer100g,
+        portionGrams: item.portionGrams,
+      },
+    }
+    setData(current => ({ ...current, pantry: current.pantry.filter(existing => existing.id !== item.id), freezer: [freezerItem, ...current.freezer] }))
+    notify(t('inventory.movedToFreezer', { name: item.name }))
+  }
+  const moveFreezerToPantry = (item: FreezerItem) => {
+    const details = item.pantryDetails
+    const pantryItem: PantryItem = {
+      id: item.id,
+      name: item.name,
+      category: item.category,
+      location: details?.location ?? settings.defaultLocation,
+      quantity: item.quantity,
+      minimum: details?.minimum ?? settings.defaultMinimum,
+      unit: item.unit,
+      priceCzk: details?.priceCzk ?? 0,
+      purchasedAt: details?.purchasedAt ?? today(),
+      expiresAt: details?.expiresAt,
+      barcode: item.barcode,
+      image: item.image,
+      nutritionPer100g: details?.nutritionPer100g,
+      portionGrams: details?.portionGrams,
+      productId: item.productId,
+    }
+    setData(current => ({ ...current, freezer: current.freezer.filter(existing => existing.id !== item.id), pantry: [pantryItem, ...current.pantry] }))
+    notify(t('inventory.movedToPantry', { name: item.name }))
+  }
   const toggleTodo = (id: string) => setData(prev => ({ ...prev, todos: prev.todos.map(t => t.id === id ? { ...t, done: !t.done } : t) }))
   const notify = (text: string) => setToast(text)
   const go = (target: Page) => { setPage(target); setMobileNav(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }
@@ -367,8 +415,8 @@ function App() {
     dashboard: <Dashboard data={data} lowItems={lowItems} expiringItems={expiringItems} freezerWarnings={freezerWarnings} pendingShopping={pendingShopping} inventoryValue={inventoryValue} money={money} go={go} updatePantry={updatePantry} toggleTodo={toggleTodo} />,
     products: <ProductCatalogPage products={data.products} onAdd={() => setProductEditor('new')} onEdit={setProductEditor} onDelete={id => setData(current => ({ ...current, products: current.products.filter(product => product.id !== id) }))} onUse={product => { setSelectedCatalogProduct(product); setScannedEan(product.ean) }} onScan={() => setModal('scanner')} />,
     weight: <WeightTrackingPage data={data} setData={setData} notify={notify} />,
-    pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
-    freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} />,
+    pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} move={movePantryToFreezer} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
+    freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} move={moveFreezerToPantry} />,
     shopping: <Shopping data={data} settings={settings} setData={setData} money={money} open={setModal} notify={notify} />,
     recipes: <Recipes data={data} setData={setData} notify={notify} go={go} open={() => { setEditingRecipe(null); setModal('recipe') }} edit={recipe => { setEditingRecipe(recipe); setModal('recipe') }} />,
     todos: <Todos data={data} setData={setData} toggle={toggleTodo} open={() => setModal('todo')} />,
@@ -471,30 +519,38 @@ function Dashboard({ data, lowItems, expiringItems, freezerWarnings, pendingShop
   </>
 }
 
-function Pantry({ data, money, update, setPortion, remove, open, edit }: { data: AppData; money: (n: number) => string; update: (id: string, d: number) => void; setPortion: (id: string, grams: number) => void; remove: (id: string) => void; open: () => void; edit: (item: PantryItem) => void }) {
+function Pantry({ data, money, update, setPortion, remove, move, open, edit }: { data: AppData; money: (n: number) => string; update: (id: string, d: number) => void; setPortion: (id: string, grams: number) => void; remove: (id: string) => void; move: (item: PantryItem) => void; open: () => void; edit: (item: PantryItem) => void }) {
   const { locale, t } = useI18n()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState('all')
+  const [categoryFilter, setCategoryFilter] = useState('all')
   const locations = ['all', ...new Set(data.pantry.map(item => item.location))]
-  const items = data.pantry.filter(i => (filter === 'all' || i.location === filter) && i.name.toLocaleLowerCase(locale).includes(query.toLocaleLowerCase(locale)))
+  const categories = [...new Set(data.pantry.map(item => item.category))].sort((a, b) => a.localeCompare(b, locale))
+  const selectedCategory = categoryFilter === 'all' || categories.includes(categoryFilter) ? categoryFilter : 'all'
+  const items = data.pantry.filter(i => (filter === 'all' || i.location === filter) && (selectedCategory === 'all' || i.category === selectedCategory) && i.name.toLocaleLowerCase(locale).includes(query.toLocaleLowerCase(locale)))
   return <>
     <PageIntro title={t('pantry.title')} subtitle={t('pantry.subtitle')} button={t('pantry.add')} icon={<Plus />} onClick={open} />
-    <div className="toolbar"><label className="input-search"><Search size={18} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('pantry.search')} /></label><div className="chips">{locations.map(l => <button key={l} className={filter === l ? 'active' : ''} onClick={() => setFilter(l)}>{l === 'all' ? t('common.all') : l}</button>)}</div></div>
+    <div className="toolbar"><label className="input-search"><Search size={18} /><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('pantry.search')} /></label><div className="toolbar-filters"><label className="category-filter"><Filter size={16} /><span>{t('settings.category')}</span><select value={selectedCategory} onChange={event => setCategoryFilter(event.target.value)}><option value="all">{t('inventory.allCategories')}</option>{categories.map(category => <option value={category} key={category}>{category}</option>)}</select></label><div className="chips">{locations.map(l => <button key={l} className={filter === l ? 'active' : ''} onClick={() => setFilter(l)}>{l === 'all' ? t('common.all') : l}</button>)}</div></div></div>
     <div className="inventory-grid">{items.map(item => {
       const low = item.quantity < item.minimum
       const expiryDays = item.expiresAt ? daysBetween(today(), item.expiresAt) : null
-      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} image={item.image} large /><div className="card-badges">{low && <span className="badge danger">{t('pantry.restock')}</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? t('pantry.expired') : t('common.days', { count: expiryDays })}</span>}<button className="edit-button" onClick={() => edit(item)} aria-label={t('common.edit', { name: item.name })}><Pencil size={15} /></button></div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>{t('pantry.minimum')}</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className={`card-meta ${item.nutritionPer100g ? 'has-nutrition' : ''}`}><span>{money(item.priceCzk)} / {item.unit}</span>{item.nutritionPer100g && <NutritionInline nutrition={item.nutritionPer100g} grams={item.portionGrams ?? 100} onGrams={grams => setPortion(item.id, grams)} />}<span>{item.expiresAt ? t('pantry.until', { date: formatDate(item.expiresAt, locale) }) : t('pantry.noExpiry')}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label={t('common.delete')}><Trash2 size={16} /></button></article>
+      return <article className={`inventory-card ${low ? 'is-low' : ''}`} key={item.id}><div className="card-top"><ProductIcon name={item.name} image={item.image} large /><div className="card-badges">{low && <span className="badge danger">{t('pantry.restock')}</span>}{expiryDays !== null && expiryDays <= 7 && <span className="badge warning">{expiryDays < 0 ? t('pantry.expired') : t('common.days', { count: expiryDays })}</span>}<button className="edit-button move-button" onClick={() => move(item)} aria-label={t('inventory.moveToFreezer', { name: item.name })} title={t('inventory.moveToFreezer', { name: item.name })}><ArrowRightLeft size={15} /></button><button className="edit-button" onClick={() => edit(item)} aria-label={t('common.edit', { name: item.name })}><Pencil size={15} /></button></div></div><h3>{item.name}</h3><p>{item.category} · {item.location}</p><Quantity value={item.quantity} unit={item.unit} onMinus={() => update(item.id, -1)} onPlus={() => update(item.id, 1)} large /><div className="minimum-line"><span>{t('pantry.minimum')}</span><strong>{item.minimum} {item.unit}</strong></div><div className="progress"><i style={{ width: `${Math.min(100, item.quantity / Math.max(item.minimum, 1) * 100)}%` }} /></div><div className={`card-meta ${item.nutritionPer100g ? 'has-nutrition' : ''}`}><span>{money(item.priceCzk)} / {item.unit}</span>{item.nutritionPer100g && <NutritionInline nutrition={item.nutritionPer100g} grams={item.portionGrams ?? 100} onGrams={grams => setPortion(item.id, grams)} />}<span>{item.expiresAt ? t('pantry.until', { date: formatDate(item.expiresAt, locale) }) : t('pantry.noExpiry')}</span></div><button className="delete-button" onClick={() => remove(item.id)} aria-label={t('common.delete')}><Trash2 size={16} /></button></article>
     })}</div>{!items.length && <Empty text={t('pantry.empty')} />}
   </>
 }
 
-function Freezer({ data, setData, open }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; open: () => void }) {
+function Freezer({ data, setData, open, move }: { data: AppData; setData: React.Dispatch<React.SetStateAction<AppData>>; open: () => void; move: (item: FreezerItem) => void }) {
   const { locale, t } = useI18n()
+  const [categoryFilter, setCategoryFilter] = useState('all')
+  const categories = [...new Set(data.freezer.map(item => item.category))].sort((a, b) => a.localeCompare(b, locale))
+  const selectedCategory = categoryFilter === 'all' || categories.includes(categoryFilter) ? categoryFilter : 'all'
+  const items = data.freezer.filter(item => selectedCategory === 'all' || item.category === selectedCategory)
   const remove = (id: string) => setData(p => ({ ...p, freezer: p.freezer.filter(i => i.id !== id) }))
   return <>
     <PageIntro title={t('freezer.title')} subtitle={t('freezer.subtitle')} button={t('freezer.add')} icon={<Plus />} onClick={open} />
     <div className="info-banner"><Snowflake size={21} /><div><strong>{t('freezer.goodToKnow')}</strong><span>{t('freezer.fact')}</span></div></div>
-    <div className="freezer-layout"><section className="freezer-list"><h3>{t('freezer.contents')} <span>{data.freezer.length}</span></h3>{data.freezer.map(item => { const progress = freezerProgress(item); return <article className="freezer-row" key={item.id}><ProductIcon name={item.name} /><div className="grow"><div className="row-title"><strong>{item.name}</strong>{progress >= 100 ? <span className="badge danger">{t('freezer.consume')}</span> : progress >= 75 ? <span className="badge warning">{t('freezer.soon')}</span> : <span className="badge success">{t('freezer.ok')}</span>}</div><span>{item.quantity} {item.unit} · {item.category}{item.note ? ` · ${item.note}` : ''}</span><div className="freshness"><i className={progress >= 100 ? 'danger' : progress >= 75 ? 'warning' : ''} style={{ width: `${Math.min(100, progress)}%` }} /></div><small>{t('freezer.frozen', { date: formatDate(item.frozenAt, locale), months: item.recommendedMonths })}</small></div><button className="icon-btn" onClick={() => remove(item.id)} aria-label={t('common.delete')}><Trash2 size={16} /></button></article>})}</section>
+    <div className="freezer-filter-toolbar"><label className="category-filter"><Filter size={16} /><span>{t('settings.category')}</span><select value={selectedCategory} onChange={event => setCategoryFilter(event.target.value)}><option value="all">{t('inventory.allCategories')}</option>{categories.map(category => <option value={category} key={category}>{category}</option>)}</select></label></div>
+    <div className="freezer-layout"><section className="freezer-list"><h3>{t('freezer.contents')} <span>{items.length}</span></h3>{items.map(item => { const progress = freezerProgress(item); return <article className="freezer-row" key={item.id}><ProductIcon name={item.name} /><div className="grow"><div className="row-title"><strong>{item.name}</strong>{progress >= 100 ? <span className="badge danger">{t('freezer.consume')}</span> : progress >= 75 ? <span className="badge warning">{t('freezer.soon')}</span> : <span className="badge success">{t('freezer.ok')}</span>}</div><span>{item.quantity} {item.unit} · {item.category}{item.note ? ` · ${item.note}` : ''}</span><div className="freshness"><i className={progress >= 100 ? 'danger' : progress >= 75 ? 'warning' : ''} style={{ width: `${Math.min(100, progress)}%` }} /></div><small>{t('freezer.frozen', { date: formatDate(item.frozenAt, locale), months: item.recommendedMonths })}</small></div><div className="freezer-row-actions"><button className="icon-btn move-button" onClick={() => move(item)} aria-label={t('inventory.moveToPantry', { name: item.name })} title={t('inventory.moveToPantry', { name: item.name })}><ArrowRightLeft size={16} /></button><button className="icon-btn" onClick={() => remove(item.id)} aria-label={t('common.delete')}><Trash2 size={16} /></button></div></article>})}{!items.length && <Empty text={t('inventory.noCategoryItems')} />}</section>
       <aside className="guide"><div className="guide-head"><Fish size={20} /><div><h3>{t('freezer.guide')}</h3><p>{t('freezer.quality')}</p></div></div>{freezerGuide.map(g => <div className="guide-row" key={g.category}><span>{g.icon}</span><strong>{g.category}</strong><b>{t('common.monthsShort', { count: g.months })}</b></div>)}<a href="https://www.fsis.usda.gov/food-safety/safe-food-handling-and-preparation/food-safety-basics/freezing-and-food-safety" target="_blank" rel="noreferrer">{t('freezer.source')} <ArrowRight size={14} /></a></aside>
     </div>
   </>
