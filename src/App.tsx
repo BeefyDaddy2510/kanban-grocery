@@ -3,7 +3,7 @@ import type { IScannerControls } from '@zxing/browser'
 import {
   AlertTriangle, Archive, ArrowRight, ArrowRightLeft, CalendarDays, Check, CheckCircle2, ChefHat, ExternalLink,
   ChevronRight, CircleDollarSign, ClipboardList, Clock3, Euro, Filter, Fish, Info, LayoutDashboard, LoaderCircle,
-  ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, Scale, ScanLine, Search, ShoppingBasket,
+  GripVertical, ListChecks, Menu, Minus, Moon, Package, Pencil, Plus, Scale, ScanLine, Search, ShoppingBasket,
   QrCode, ReceiptText, Settings, Snowflake, Sun, Trash2, Upload, X,
 } from 'lucide-react'
 import { freezerGuide, initialData } from './data'
@@ -573,14 +573,11 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
   const [draggingListId, setDraggingListId] = useState<string | null>(null)
   const [dropTarget, setDropTarget] = useState<ShoppingListDrop | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
-  const longPressTimerRef = useRef<number | null>(null)
-  const dragStartRef = useRef<{ id: string; pointerId: number; x: number; y: number; element: HTMLButtonElement } | null>(null)
+  const dragStartRef = useRef<{ id: string; pointerId: number } | null>(null)
   const draggingListRef = useRef<string | null>(null)
   const dropTargetRef = useRef<ShoppingListDrop | null>(null)
-  const suppressListClickRef = useRef(false)
   const list = activeLists.find(l => l.id === active) ?? activeLists[0]
   useEffect(() => { if (list && list.id !== active) setActive(list.id) }, [active, list])
-  useEffect(() => () => { if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current) }, [])
   const archiveList = () => {
     if (!list) return
     setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, archived: true } : l) }))
@@ -598,63 +595,47 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
     setNewListOpen(false)
     notify(t('shopping.created', { name: draft.name }))
   }
-  const cancelLongPress = () => {
-    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current)
-    longPressTimerRef.current = null
-  }
   const startListDrag = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
     if (!event.isPrimary || event.button !== 0) return
-    cancelLongPress()
-    dragStartRef.current = { id, pointerId: event.pointerId, x: event.clientX, y: event.clientY, element: event.currentTarget }
-    longPressTimerRef.current = window.setTimeout(() => {
-      const start = dragStartRef.current
-      if (!start || start.id !== id) return
-      draggingListRef.current = id
-      suppressListClickRef.current = true
-      setDraggingListId(id)
-      start.element.setPointerCapture?.(start.pointerId)
-    }, 350)
+    event.preventDefault()
+    event.stopPropagation()
+    dragStartRef.current = { id, pointerId: event.pointerId }
+    draggingListRef.current = id
+    setDraggingListId(id)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
   }
   const moveListDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     const start = dragStartRef.current
     if (!start || start.pointerId !== event.pointerId) return
-    if (!draggingListRef.current) {
-      if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 8) { cancelLongPress(); dragStartRef.current = null }
-      return
-    }
     event.preventDefault()
     const tabs = tabsRef.current
     if (!tabs) return
     const bounds = tabs.getBoundingClientRect()
     if (event.clientX < bounds.left + 36) tabs.scrollLeft -= 12
     if (event.clientX > bounds.right - 36) tabs.scrollLeft += 12
-    const candidates = Array.from(tabs.querySelectorAll<HTMLButtonElement>('[data-list-id]')).filter(button => button.dataset.listId !== draggingListRef.current)
-    let closest: { button: HTMLButtonElement; distance: number } | null = null
-    for (const button of candidates) {
-      const rect = button.getBoundingClientRect()
+    const candidates = Array.from(tabs.querySelectorAll<HTMLElement>('[data-list-id]')).filter(tab => tab.dataset.listId !== draggingListRef.current)
+    let closest: { tab: HTMLElement; distance: number } | null = null
+    for (const tab of candidates) {
+      const rect = tab.getBoundingClientRect()
       const distance = Math.abs(event.clientX - (rect.left + rect.width / 2))
-      if (!closest || distance < closest.distance) closest = { button, distance }
+      if (!closest || distance < closest.distance) closest = { tab, distance }
     }
-    if (!closest?.button.dataset.listId) return
-    const rect = closest.button.getBoundingClientRect()
-    const nextTarget: ShoppingListDrop = { id: closest.button.dataset.listId, position: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after' }
+    if (!closest?.tab.dataset.listId) return
+    const rect = closest.tab.getBoundingClientRect()
+    const nextTarget: ShoppingListDrop = { id: closest.tab.dataset.listId, position: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after' }
     if (dropTargetRef.current?.id !== nextTarget.id || dropTargetRef.current.position !== nextTarget.position) {
       dropTargetRef.current = nextTarget
       setDropTarget(nextTarget)
     }
   }
   const finishListDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
-    cancelLongPress()
     const sourceId = draggingListRef.current
     const target = dropTargetRef.current
     if (sourceId && target) {
       setData(current => ({ ...current, shoppingLists: reorderShoppingLists(current.shoppingLists, sourceId, target) }))
       notify(t('shopping.reordered'))
     }
-    if (sourceId) {
-      event.preventDefault()
-      window.setTimeout(() => { suppressListClickRef.current = false }, 0)
-    }
+    if (sourceId) event.preventDefault()
     dragStartRef.current = null
     draggingListRef.current = null
     dropTargetRef.current = null
@@ -662,11 +643,9 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
     setDropTarget(null)
   }
   const cancelListDrag = () => {
-    cancelLongPress()
     dragStartRef.current = null
     draggingListRef.current = null
     dropTargetRef.current = null
-    suppressListClickRef.current = false
     setDraggingListId(null)
     setDropTarget(null)
   }
@@ -714,7 +693,7 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
   const total = list.items.reduce((s, i) => s + (i.priceCzk ?? 0) * i.quantity, 0)
   return <>
     <PageIntro title={t('shopping.title')} subtitle={t('shopping.subtitle')} button={t('pantry.add')} icon={<Plus />} onClick={() => open('shopping')} />
-    <div className={`shopping-tabs ${draggingListId ? 'is-reordering' : ''}`} ref={tabsRef}>{activeLists.map(l => <button key={l.id} data-list-id={l.id} className={[l.id === list.id ? 'active' : '', l.id === draggingListId ? 'is-dragging' : '', dropTarget?.id === l.id ? `drop-${dropTarget.position}` : ''].filter(Boolean).join(' ')} title={t('shopping.reorderHint')} aria-grabbed={l.id === draggingListId} onPointerDown={event => startListDrag(event, l.id)} onPointerMove={moveListDrag} onPointerUp={finishListDrag} onPointerCancel={cancelListDrag} onContextMenu={event => event.preventDefault()} onClick={event => { if (suppressListClickRef.current) { event.preventDefault(); return } setActive(l.id) }}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button>)}<button className="new-list" onClick={() => setNewListOpen(true)}><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive', { count: archivedLists.length })}</button>}</div>
+    <div className={`shopping-tabs ${draggingListId ? 'is-reordering' : ''}`} ref={tabsRef}>{activeLists.map(l => <div key={l.id} data-list-id={l.id} className={['shopping-list-tab', l.id === list.id ? 'active' : '', l.id === draggingListId ? 'is-dragging' : '', dropTarget?.id === l.id ? `drop-${dropTarget.position}` : ''].filter(Boolean).join(' ')}><button className="shopping-list-select" type="button" onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button><button className="shopping-list-drag" type="button" title={t('shopping.reorderHint')} aria-label={`${t('shopping.reorderHint')}: ${l.name}`} aria-grabbed={l.id === draggingListId} onPointerDown={event => startListDrag(event, l.id)} onPointerMove={moveListDrag} onPointerUp={finishListDrag} onPointerCancel={cancelListDrag} onContextMenu={event => event.preventDefault()}><GripVertical size={18} /></button></div>)}<button className="new-list" onClick={() => setNewListOpen(true)}><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive', { count: archivedLists.length })}</button>}</div>
     {showArchived && <ArchivedLists lists={archivedLists} restore={restoreList} />}
     <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary receipt-button" onClick={() => setReceiptOpen(true)}><ReceiptText size={18} />{t('receipt.upload')}</button><button className="secondary" onClick={archiveList}><Archive size={17} />{t('shopping.archiveAction')}</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />{t('shopping.scan')}</button></div></div>
       <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input className="quick-name" list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><input value={quickItemQuantity} onChange={event => setQuickItemQuantity(event.target.value)} type="number" min="0.01" step="0.01" placeholder={t('shopping.quickQuantity')} aria-label={t('shopping.quickQuantity')} /><input value={quickItemPrice} onChange={event => setQuickItemPrice(event.target.value)} type="number" min="0" step="0.01" placeholder={t('shopping.quickPrice')} aria-label={t('shopping.quickPrice')} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>

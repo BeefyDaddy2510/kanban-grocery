@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.1
+
+- Lištu nákupních seznamů lze na telefonu opět spolehlivě posouvat vodorovným gestem.
+- Přesouvání seznamů má samostatné madlo a spouští se okamžitě bez dlouhého podržení na iOS, Androidu i počítači.
+
 ## 1.9.0
 
 - Potraviny lze jedním tlačítkem přesouvat ze Zásob do Mrazáku i zpět.
