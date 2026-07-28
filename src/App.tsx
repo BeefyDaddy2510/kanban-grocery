@@ -31,6 +31,16 @@ const EXCHANGE_RATE_API_URL = new URL('api/exchange-rate', document.baseURI).toS
 const RECEIPT_OCR_API_URL = new URL('api/receipt-ocr', document.baseURI).toString()
 const APP_ICON_URL = new URL('app-icon.png', document.baseURI).toString()
 const EXCHANGE_RATE_REFRESH_MS = 6 * 60 * 60 * 1000
+const parsePriceInput = (value: string) => {
+  const normalized = value.trim().replace(/\s+/g, '').replace(',', '.')
+  return /^(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized) ? Number(normalized) : Number.NaN
+}
+const roundPrice = (value: number) => Math.round((value + Number.EPSILON) * 100) / 100
+const convertPrice = (value: number, from: Currency, to: Currency, rate: number) => {
+  const valueCzk = from === 'CZK' ? value : value * rate
+  return roundPrice(to === 'CZK' ? valueCzk : valueCzk / rate)
+}
+const formatPriceInput = (value: number, locale: string) => new Intl.NumberFormat(locale, { useGrouping: false, maximumFractionDigits: 2 }).format(value)
 const normalizeNutrition = (value?: Partial<NutritionPer100g>): NutritionPer100g => ({ kcal: Number(value?.kcal) || 0, carbs: Number(value?.carbs) || 0, sugars: Number(value?.sugars) || 0, fat: Number(value?.fat) || 0, protein: Number(value?.protein) || 0, fiber: Number(value?.fiber) || 0 })
 const normalizeData = (value: AppData): AppData => {
   const needsCatalogMigration = (value.foodCatalogSeedVersion ?? 0) < FOOD_CATALOG_SEED_VERSION
@@ -417,7 +427,7 @@ function App() {
     weight: <WeightTrackingPage data={data} setData={setData} notify={notify} />,
     pantry: <Pantry data={data} money={money} update={updatePantry} setPortion={setPantryPortion} remove={removePantry} move={movePantryToFreezer} open={() => { setEditingPantry(null); setModal('pantry') }} edit={item => { setEditingPantry(item); setModal('pantry') }} />,
     freezer: <Freezer data={data} setData={setData} open={() => setModal('freezer')} move={moveFreezerToPantry} />,
-    shopping: <Shopping data={data} settings={settings} setData={setData} money={money} open={setModal} notify={notify} />,
+    shopping: <Shopping data={data} settings={settings} currency={currency} rate={rate} setData={setData} money={money} open={setModal} notify={notify} />,
     recipes: <Recipes data={data} setData={setData} notify={notify} go={go} open={() => { setEditingRecipe(null); setModal('recipe') }} edit={recipe => { setEditingRecipe(recipe); setModal('recipe') }} />,
     todos: <Todos data={data} setData={setData} toggle={toggleTodo} open={() => setModal('todo')} />,
     settings: <SettingsPage settings={settings} setSettings={setSettings} setCurrency={setCurrency} notify={notify} changeLanguage={changeLanguage} />,
@@ -556,8 +566,8 @@ function Freezer({ data, setData, open, move }: { data: AppData; setData: React.
   </>
 }
 
-function Shopping({ data, settings, setData, money, open, notify }: { data: AppData; settings: SiteSettings; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
-  const { t } = useI18n()
+function Shopping({ data, settings, currency, rate, setData, money, open, notify }: { data: AppData; settings: SiteSettings; currency: Currency; rate: number; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
+  const { locale, t } = useI18n()
   const activeLists = data.shoppingLists.filter(l => !l.archived)
   const archivedLists = data.shoppingLists.filter(l => l.archived)
   const [active, setActive] = useState(activeLists[0]?.id ?? '')
@@ -576,8 +586,29 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
   const dragStartRef = useRef<{ id: string; pointerId: number } | null>(null)
   const draggingListRef = useRef<string | null>(null)
   const dropTargetRef = useRef<ShoppingListDrop | null>(null)
+  const quickPriceCurrencyRef = useRef(currency)
+  const quickPriceCzkRef = useRef<number | null>(null)
   const list = activeLists.find(l => l.id === active) ?? activeLists[0]
   useEffect(() => { if (list && list.id !== active) setActive(list.id) }, [active, list])
+  useEffect(() => {
+    const previousCurrency = quickPriceCurrencyRef.current
+    if (previousCurrency === currency) return
+    quickPriceCurrencyRef.current = currency
+    setQuickItemPrice(current => {
+      if (!current.trim()) return current
+      const enteredPrice = parsePriceInput(current)
+      if (!Number.isFinite(enteredPrice)) return current
+      const priceCzk = quickPriceCzkRef.current ?? convertPrice(enteredPrice, previousCurrency, 'CZK', rate)
+      quickPriceCzkRef.current = priceCzk
+      return formatPriceInput(convertPrice(priceCzk, 'CZK', currency, rate), locale)
+    })
+  }, [currency, locale, rate])
+  const changeQuickItemPrice = (value: string) => {
+    if (!/^\d*(?:[.,]\d{0,2})?$/.test(value)) return
+    setQuickItemPrice(value)
+    const enteredPrice = parsePriceInput(value)
+    quickPriceCzkRef.current = Number.isFinite(enteredPrice) ? convertPrice(enteredPrice, currency, 'CZK', rate) : null
+  }
   const archiveList = () => {
     if (!list) return
     setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id === list.id ? { ...l, archived: true } : l) }))
@@ -655,12 +686,14 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
     if (!name) return
     const product = data.products.find(candidate => candidate.name.toLocaleLowerCase() === name.toLocaleLowerCase())
     const enteredQuantity = Number(quickItemQuantity)
-    const enteredPrice = Number(quickItemPrice)
-    const item: ShoppingItem = { id: uid(), name, quantity: quickItemQuantity && enteredQuantity > 0 ? enteredQuantity : 1, quantitySpecified: Boolean(quickItemQuantity), unit: 'ks', checked: false, addToPantry: false, productId: product?.id, barcode: product?.ean, image: product?.image, priceCzk: quickItemPrice && enteredPrice >= 0 ? enteredPrice : product?.priceCzk }
+    const enteredPrice = parsePriceInput(quickItemPrice)
+    const enteredPriceCzk = quickPriceCzkRef.current ?? (currency === 'CZK' ? enteredPrice : enteredPrice * rate)
+    const item: ShoppingItem = { id: uid(), name, quantity: quickItemQuantity && enteredQuantity > 0 ? enteredQuantity : 1, quantitySpecified: Boolean(quickItemQuantity), unit: 'ks', checked: false, addToPantry: false, productId: product?.id, barcode: product?.ean, image: product?.image, priceCzk: quickItemPrice && Number.isFinite(enteredPriceCzk) && enteredPriceCzk >= 0 ? roundPrice(enteredPriceCzk) : product?.priceCzk }
     setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id === list.id ? { ...candidate, items: [...candidate.items, item] } : candidate) }))
     setQuickItemName('')
     setQuickItemQuantity('')
     setQuickItemPrice('')
+    quickPriceCzkRef.current = null
     notify(t('shopping.quickAdded', { name }))
   }
   const toggle = (id: string) => setData(p => ({ ...p, shoppingLists: p.shoppingLists.map(l => l.id !== list.id ? l : { ...l, items: l.items.map(i => i.id === id ? { ...i, checked: !i.checked } : i) }) }))
@@ -696,7 +729,7 @@ function Shopping({ data, settings, setData, money, open, notify }: { data: AppD
     <div className={`shopping-tabs ${draggingListId ? 'is-reordering' : ''}`} ref={tabsRef}>{activeLists.map(l => <div key={l.id} data-list-id={l.id} className={['shopping-list-tab', l.id === list.id ? 'active' : '', l.id === draggingListId ? 'is-dragging' : '', dropTarget?.id === l.id ? `drop-${dropTarget.position}` : ''].filter(Boolean).join(' ')}><button className="shopping-list-select" type="button" onClick={() => setActive(l.id)}><i style={{ background: l.color }} /><span><strong>{l.name}</strong><small>{l.type} · {t('shopping.remaining', { count: l.items.filter(i => !i.checked).length })}</small></span></button><button className="shopping-list-drag" type="button" title={t('shopping.reorderHint')} aria-label={`${t('shopping.reorderHint')}: ${l.name}`} aria-grabbed={l.id === draggingListId} onPointerDown={event => startListDrag(event, l.id)} onPointerMove={moveListDrag} onPointerUp={finishListDrag} onPointerCancel={cancelListDrag} onContextMenu={event => event.preventDefault()}><GripVertical size={18} /></button></div>)}<button className="new-list" onClick={() => setNewListOpen(true)}><Plus size={17} />{t('shopping.newList')}</button>{archivedLists.length > 0 && <button className="archive-tab" onClick={() => setShowArchived(!showArchived)}><Archive size={17} />{t('shopping.archive', { count: archivedLists.length })}</button>}</div>
     {showArchived && <ArchivedLists lists={archivedLists} restore={restoreList} />}
     <section className="shopping-panel"><div className="shopping-head"><div><span className="list-dot" style={{ background: list.color }} /><div><h2>{list.name}</h2><p>{list.type}</p></div></div><div className="shopping-head-actions"><button className="secondary receipt-button" onClick={() => setReceiptOpen(true)}><ReceiptText size={18} />{t('receipt.upload')}</button><button className="secondary" onClick={archiveList}><Archive size={17} />{t('shopping.archiveAction')}</button><button className="secondary" onClick={() => open('scanner')}><ScanLine size={18} />{t('shopping.scan')}</button></div></div>
-      <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input className="quick-name" list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><input value={quickItemQuantity} onChange={event => setQuickItemQuantity(event.target.value)} type="number" min="0.01" step="0.01" placeholder={t('shopping.quickQuantity')} aria-label={t('shopping.quickQuantity')} /><input value={quickItemPrice} onChange={event => setQuickItemPrice(event.target.value)} type="number" min="0" step="0.01" placeholder={t('shopping.quickPrice')} aria-label={t('shopping.quickPrice')} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
+      <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input className="quick-name" list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><input value={quickItemQuantity} onChange={event => setQuickItemQuantity(event.target.value)} type="number" min="0.01" step="0.01" placeholder={t('shopping.quickQuantity')} aria-label={t('shopping.quickQuantity')} /><input value={quickItemPrice} onChange={event => changeQuickItemPrice(event.target.value)} type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]{0,2}" placeholder={t('shopping.quickPriceCurrency', { currency })} aria-label={t('shopping.quickPriceCurrency', { currency })} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
       <datalist id="shopping-quick-products">{data.products.map(product => <option value={product.name} key={product.id} />)}</datalist>
       <div className="shopping-progress"><div><span>{t('shopping.progress')}</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
       <div className="shopping-items">{list.items.map(item => <div key={item.id} className={item.checked ? 'checked' : ''}><label className="shopping-item-toggle"><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} aria-label={item.name} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} image={item.image} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ` · ${t('shopping.preselected')}` : ''}</small></span></label><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : t('shopping.enterPrice')}</span><div className="shopping-item-actions"><button className="icon-btn" type="button" onClick={() => setEditingItem(item)} aria-label={`${t('common.edit')}: ${item.name}`} title={t('common.edit')}><Pencil size={15} /></button><button className="icon-btn delete-item" type="button" onClick={() => removeItem(item)} aria-label={`${t('common.delete')}: ${item.name}`} title={t('common.delete')}><Trash2 size={15} /></button></div></div>)}</div>

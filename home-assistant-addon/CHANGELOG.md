@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.2
+
+- Cena při rychlém přidávání do nákupního seznamu se zadává v právě zobrazené měně a při přepnutí CZK/EUR se obousměrně přepočítá.
+- Cenové pole přijímá desetinnou čárku i tečku a při opakovaném přepínání měny zachovává přesnou původní hodnotu.
+
 ## 1.9.1
 
 - Lištu nákupních seznamů lze na telefonu opět spolehlivě posouvat vodorovným gestem.
