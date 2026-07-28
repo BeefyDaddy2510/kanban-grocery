@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.9.3
+
+- Dialog úpravy nákupní položky zobrazuje odhad ceny v opačné měně než hlavní přepínač.
+- Ruční změna odhadu v EUR nebo CZK se při uložení přepočítá do hlavní měny; podporuje desetinnou čárku i tečku.
+
 ## 1.9.2
 
 - Cena při rychlém přidávání do nákupního seznamu se zadává v právě zobrazené měně a při přepnutí CZK/EUR se obousměrně přepočítá.

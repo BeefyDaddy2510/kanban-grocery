@@ -75,6 +75,9 @@ Object.assign(messages.de, {
 Object.assign(messages.cs, { 'nav.products': 'Databáze potravin', 'nav.weight': 'Hmotnost', 'nutrition.sugars': 'z toho cukry' })
 Object.assign(messages.en, { 'nav.products': 'Food database', 'nav.weight': 'Weight', 'nutrition.sugars': 'of which sugars' })
 Object.assign(messages.de, { 'nav.products': 'Lebensmitteldatenbank', 'nav.weight': 'Gewicht', 'nutrition.sugars': 'davon Zucker' })
+Object.assign(messages.cs, { 'modal.estimatedPriceCurrency': 'Odhad ceny v {currency}' })
+Object.assign(messages.en, { 'modal.estimatedPriceCurrency': 'Estimated price in {currency}' })
+Object.assign(messages.de, { 'modal.estimatedPriceCurrency': 'Geschätzter Preis in {currency}' })
 
 Object.assign(messages.cs, {
   'inventory.allCategories': 'Všechny kategorie',
