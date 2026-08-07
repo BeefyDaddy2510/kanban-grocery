@@ -120,6 +120,25 @@ Object.assign(messages.de, {
   'receipt.upload': 'Beleg einlesen', 'receipt.title': 'Beleg einlesen', 'receipt.hint': 'Foto oder PDF hochladen. Die lokale OCR erkennt Artikel, Mengen und Preise; prüfe alles vor dem Speichern.', 'receipt.choose': 'Belegfoto oder PDF auswählen', 'receipt.formats': 'JPG, PNG, WebP oder PDF · maximal 15 MB', 'receipt.recognizing': 'Beleg wird erkannt…', 'receipt.failed': 'Der Beleg konnte nicht erkannt werden.', 'receipt.noneFound': 'OCR hat keine Artikel mit Preis gefunden. Versuche ein schärferes Foto ohne Spiegelungen.', 'receipt.result': 'Erkannte Artikel', 'receipt.review': 'Fehler korrigieren und Artikel zum Speichern in den Vorräten auswählen.', 'receipt.addRow': 'Zeile hinzufügen', 'receipt.save': 'In Vorräte speichern ({count})', 'receipt.saved': '{count} Artikel wurden in den Vorräten gespeichert.',
 })
 
+Object.assign(messages.cs, {
+  'shopping.itemReorderHint': 'Přesunout položku',
+  'shopping.itemReordered': 'Pořadí položek bylo uloženo',
+  'shopping.unitPrice': '{price} / {unit}',
+  'shopping.totalPrice': 'celkem {price}',
+})
+Object.assign(messages.en, {
+  'shopping.itemReorderHint': 'Move item',
+  'shopping.itemReordered': 'Item order saved',
+  'shopping.unitPrice': '{price} / {unit}',
+  'shopping.totalPrice': 'total {price}',
+})
+Object.assign(messages.de, {
+  'shopping.itemReorderHint': 'Artikel verschieben',
+  'shopping.itemReordered': 'Artikelreihenfolge gespeichert',
+  'shopping.unitPrice': '{price} / {unit}',
+  'shopping.totalPrice': 'gesamt {price}',
+})
+
 type I18nContextValue = {
   language: Language
   locale: string

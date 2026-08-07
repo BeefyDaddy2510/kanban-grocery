@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.10.0
+
+- Nákupní položky zobrazují vedle množství cenu za jednotku i celkovou cenu za dané množství, a to také na mobilu.
+- Položky lze pomocí samostatného madla přetahovat nahoru a dolů; nové pořadí se automaticky uloží a funguje myší i dotykem.
+
 ## 1.9.3
 
 - Dialog úpravy nákupní položky zobrazuje odhad ceny v opačné měně než hlavní přepínač.

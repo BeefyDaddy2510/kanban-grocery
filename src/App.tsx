@@ -17,7 +17,7 @@ import type { AccentColor, AppData, Currency, FoodProduct, FreezerItem, Nutritio
 type Page = 'dashboard' | 'products' | 'weight' | 'pantry' | 'freezer' | 'shopping' | 'recipes' | 'todos' | 'settings'
 type ModalKind = 'pantry' | 'freezer' | 'shopping' | 'todo' | 'scanner' | 'recipe' | null
 type SyncStatus = 'loading' | 'saving' | 'synced' | 'error'
-type ShoppingListDrop = { id: string; position: 'before' | 'after' }
+type ShoppingDrop = { id: string; position: 'before' | 'after' }
 type CentralStateEnvelope = {
   state: { data: AppData; settings: SiteSettings } | null
   revision: number
@@ -81,7 +81,7 @@ const NAV: { page: Page; labelKey: string; icon: typeof Package }[] = [
 ]
 const units: Unit[] = ['ks', 'bal.', 'kg', 'g', 'l', 'ml']
 const uid = () => crypto.randomUUID?.() ?? `${Date.now()}-${Math.random()}`
-const reorderShoppingLists = (lists: ShoppingList[], sourceId: string, target: ShoppingListDrop) => {
+const reorderShoppingLists = (lists: ShoppingList[], sourceId: string, target: ShoppingDrop) => {
   const active = lists.filter(item => !item.archived)
   const sourceIndex = active.findIndex(item => item.id === sourceId)
   if (sourceIndex < 0 || sourceId === target.id) return lists
@@ -91,6 +91,16 @@ const reorderShoppingLists = (lists: ShoppingList[], sourceId: string, target: S
   active.splice(targetIndex + (target.position === 'after' ? 1 : 0), 0, source)
   let activeIndex = 0
   return lists.map(item => item.archived ? item : active[activeIndex++])
+}
+const reorderShoppingItems = (items: ShoppingItem[], sourceId: string, target: ShoppingDrop) => {
+  const reordered = [...items]
+  const sourceIndex = reordered.findIndex(item => item.id === sourceId)
+  if (sourceIndex < 0 || sourceId === target.id) return items
+  const [source] = reordered.splice(sourceIndex, 1)
+  const targetIndex = reordered.findIndex(item => item.id === target.id)
+  if (targetIndex < 0) return items
+  reordered.splice(targetIndex + (target.position === 'after' ? 1 : 0), 0, source)
+  return reordered
 }
 const today = () => new Date().toISOString().slice(0, 10)
 const formatDate = (value: string | undefined, locale: string) => value ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(`${value}T12:00:00`)) : '—'
@@ -568,6 +578,7 @@ function Freezer({ data, setData, open, move }: { data: AppData; setData: React.
 
 function Shopping({ data, settings, currency, rate, setData, money, open, notify }: { data: AppData; settings: SiteSettings; currency: Currency; rate: number; setData: React.Dispatch<React.SetStateAction<AppData>>; money: (n: number) => string; open: (m: ModalKind) => void; notify: (s: string) => void }) {
   const { locale, t } = useI18n()
+  const itemMoney = (czk: number) => new Intl.NumberFormat(locale, { style: 'currency', currency, maximumFractionDigits: 2 }).format(currency === 'CZK' ? czk : czk / rate)
   const activeLists = data.shoppingLists.filter(l => !l.archived)
   const archivedLists = data.shoppingLists.filter(l => l.archived)
   const [active, setActive] = useState(activeLists[0]?.id ?? '')
@@ -581,11 +592,17 @@ function Shopping({ data, settings, currency, rate, setData, money, open, notify
   const [quickItemPrice, setQuickItemPrice] = useState('')
   const [editingItem, setEditingItem] = useState<ShoppingItem | null>(null)
   const [draggingListId, setDraggingListId] = useState<string | null>(null)
-  const [dropTarget, setDropTarget] = useState<ShoppingListDrop | null>(null)
+  const [dropTarget, setDropTarget] = useState<ShoppingDrop | null>(null)
+  const [draggingItemId, setDraggingItemId] = useState<string | null>(null)
+  const [itemDropTarget, setItemDropTarget] = useState<ShoppingDrop | null>(null)
   const tabsRef = useRef<HTMLDivElement>(null)
+  const itemsRef = useRef<HTMLDivElement>(null)
   const dragStartRef = useRef<{ id: string; pointerId: number } | null>(null)
   const draggingListRef = useRef<string | null>(null)
-  const dropTargetRef = useRef<ShoppingListDrop | null>(null)
+  const dropTargetRef = useRef<ShoppingDrop | null>(null)
+  const itemDragStartRef = useRef<{ id: string; pointerId: number } | null>(null)
+  const draggingItemRef = useRef<string | null>(null)
+  const itemDropTargetRef = useRef<ShoppingDrop | null>(null)
   const quickPriceCurrencyRef = useRef(currency)
   const quickPriceCzkRef = useRef<number | null>(null)
   const list = activeLists.find(l => l.id === active) ?? activeLists[0]
@@ -653,7 +670,7 @@ function Shopping({ data, settings, currency, rate, setData, money, open, notify
     }
     if (!closest?.tab.dataset.listId) return
     const rect = closest.tab.getBoundingClientRect()
-    const nextTarget: ShoppingListDrop = { id: closest.tab.dataset.listId, position: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after' }
+    const nextTarget: ShoppingDrop = { id: closest.tab.dataset.listId, position: event.clientX < rect.left + rect.width / 2 ? 'before' : 'after' }
     if (dropTargetRef.current?.id !== nextTarget.id || dropTargetRef.current.position !== nextTarget.position) {
       dropTargetRef.current = nextTarget
       setDropTarget(nextTarget)
@@ -707,6 +724,86 @@ function Shopping({ data, settings, currency, rate, setData, money, open, notify
     if (editingItem?.id === item.id) setEditingItem(null)
     notify(t('shopping.itemDeleted', { name: item.name }))
   }
+  const startItemDrag = (event: React.PointerEvent<HTMLButtonElement>, id: string) => {
+    if (event.pointerType === 'mouse' || !event.isPrimary || event.button !== 0) return
+    event.stopPropagation()
+    itemDragStartRef.current = { id, pointerId: event.pointerId }
+    draggingItemRef.current = id
+    setDraggingItemId(id)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const moveItemDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse') return
+    const start = itemDragStartRef.current
+    if (!start || start.pointerId !== event.pointerId) return
+    event.preventDefault()
+    const items = itemsRef.current
+    if (!items) return
+    const bounds = items.getBoundingClientRect()
+    if (event.clientY < Math.max(bounds.top, 0) + 42) window.scrollBy(0, -12)
+    if (event.clientY > Math.min(bounds.bottom, window.innerHeight) - 42) window.scrollBy(0, 12)
+    const candidates = Array.from(items.querySelectorAll<HTMLElement>('[data-shopping-item-id]')).filter(row => row.dataset.shoppingItemId !== draggingItemRef.current)
+    let closest: { row: HTMLElement; distance: number } | null = null
+    for (const row of candidates) {
+      const rect = row.getBoundingClientRect()
+      const distance = Math.abs(event.clientY - (rect.top + rect.height / 2))
+      if (!closest || distance < closest.distance) closest = { row, distance }
+    }
+    if (!closest?.row.dataset.shoppingItemId) return
+    const rect = closest.row.getBoundingClientRect()
+    const nextTarget: ShoppingDrop = { id: closest.row.dataset.shoppingItemId, position: event.clientY < rect.top + rect.height / 2 ? 'before' : 'after' }
+    if (itemDropTargetRef.current?.id !== nextTarget.id || itemDropTargetRef.current.position !== nextTarget.position) {
+      itemDropTargetRef.current = nextTarget
+      setItemDropTarget(nextTarget)
+    }
+  }
+  const finishItemDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType === 'mouse') return
+    const sourceId = draggingItemRef.current
+    const target = itemDropTargetRef.current
+    if (sourceId && target) {
+      setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id === list.id ? { ...candidate, items: reorderShoppingItems(candidate.items, sourceId, target) } : candidate) }))
+      notify(t('shopping.itemReordered'))
+    }
+    if (sourceId) event.preventDefault()
+    itemDragStartRef.current = null
+    draggingItemRef.current = null
+    itemDropTargetRef.current = null
+    setDraggingItemId(null)
+    setItemDropTarget(null)
+  }
+  const cancelItemDrag = () => {
+    itemDragStartRef.current = null
+    draggingItemRef.current = null
+    itemDropTargetRef.current = null
+    setDraggingItemId(null)
+    setItemDropTarget(null)
+  }
+  const startNativeItemDrag = (event: React.DragEvent<HTMLButtonElement>, id: string) => {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', id)
+    draggingItemRef.current = id
+    setDraggingItemId(id)
+  }
+  const moveNativeItemDrag = (event: React.DragEvent<HTMLDivElement>, id: string) => {
+    if (!draggingItemRef.current || draggingItemRef.current === id) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'move'
+    const rect = event.currentTarget.getBoundingClientRect()
+    const nextTarget: ShoppingDrop = { id, position: event.clientY < rect.top + rect.height / 2 ? 'before' : 'after' }
+    itemDropTargetRef.current = nextTarget
+    setItemDropTarget(nextTarget)
+  }
+  const finishNativeItemDrag = (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const sourceId = draggingItemRef.current
+    const target = itemDropTargetRef.current
+    if (sourceId && target) {
+      setData(current => ({ ...current, shoppingLists: current.shoppingLists.map(candidate => candidate.id === list.id ? { ...candidate, items: reorderShoppingItems(candidate.items, sourceId, target) } : candidate) }))
+      notify(t('shopping.itemReordered'))
+    }
+    cancelItemDrag()
+  }
   const checkedItems = list.items.filter(item => item.checked)
   const openFinish = () => {
     setFinishSelection(new Set(checkedItems.filter(item => item.addToPantry).map(item => item.id)))
@@ -732,7 +829,7 @@ function Shopping({ data, settings, currency, rate, setData, money, open, notify
       <form className="shopping-quick-add" onSubmit={event => { event.preventDefault(); addQuickItem() }}><input className="quick-name" list="shopping-quick-products" value={quickItemName} onChange={event => setQuickItemName(event.target.value)} placeholder={t('shopping.quickPlaceholder')} aria-label={t('shopping.quickPlaceholder')} /><input value={quickItemQuantity} onChange={event => setQuickItemQuantity(event.target.value)} type="number" min="0.01" step="0.01" placeholder={t('shopping.quickQuantity')} aria-label={t('shopping.quickQuantity')} /><input value={quickItemPrice} onChange={event => changeQuickItemPrice(event.target.value)} type="text" inputMode="decimal" pattern="[0-9]*[.,]?[0-9]{0,2}" placeholder={t('shopping.quickPriceCurrency', { currency })} aria-label={t('shopping.quickPriceCurrency', { currency })} /><button type="submit" disabled={!quickItemName.trim()} aria-label={t('shopping.quickAdd')} title={t('shopping.quickAdd')}><Plus size={21} /></button></form>
       <datalist id="shopping-quick-products">{data.products.map(product => <option value={product.name} key={product.id} />)}</datalist>
       <div className="shopping-progress"><div><span>{t('shopping.progress')}</span><strong>{list.items.filter(i => i.checked).length} / {list.items.length}</strong></div><div className="progress"><i style={{ width: `${list.items.length ? list.items.filter(i => i.checked).length / list.items.length * 100 : 0}%` }} /></div></div>
-      <div className="shopping-items">{list.items.map(item => <div key={item.id} className={item.checked ? 'checked' : ''}><label className="shopping-item-toggle"><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} aria-label={item.name} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} image={item.image} /><span className="grow"><strong>{item.name}</strong><small>{item.quantity} {item.unit}{item.addToPantry ? ` · ${t('shopping.preselected')}` : ''}</small></span></label><span className="item-price">{item.priceCzk ? money(item.priceCzk * item.quantity) : t('shopping.enterPrice')}</span><div className="shopping-item-actions"><button className="icon-btn" type="button" onClick={() => setEditingItem(item)} aria-label={`${t('common.edit')}: ${item.name}`} title={t('common.edit')}><Pencil size={15} /></button><button className="icon-btn delete-item" type="button" onClick={() => removeItem(item)} aria-label={`${t('common.delete')}: ${item.name}`} title={t('common.delete')}><Trash2 size={15} /></button></div></div>)}</div>
+      <div className={`shopping-items ${draggingItemId ? 'is-reordering' : ''}`} ref={itemsRef}>{list.items.map(item => <div key={item.id} data-shopping-item-id={item.id} className={[item.checked ? 'checked' : '', item.id === draggingItemId ? 'is-dragging' : '', itemDropTarget?.id === item.id ? `drop-${itemDropTarget.position}` : ''].filter(Boolean).join(' ')} onDragOver={event => moveNativeItemDrag(event, item.id)} onDrop={finishNativeItemDrag}><button className="shopping-item-drag" type="button" draggable title={t('shopping.itemReorderHint')} aria-label={`${t('shopping.itemReorderHint')}: ${item.name}`} aria-grabbed={item.id === draggingItemId} onDragStart={event => startNativeItemDrag(event, item.id)} onDragEnd={cancelItemDrag} onPointerDown={event => startItemDrag(event, item.id)} onPointerMove={moveItemDrag} onPointerUp={finishItemDrag} onPointerCancel={event => event.pointerType !== 'mouse' && cancelItemDrag()} onContextMenu={event => event.preventDefault()}><GripVertical size={18} /></button><label className="shopping-item-toggle"><input type="checkbox" checked={item.checked} onChange={() => toggle(item.id)} aria-label={item.name} /><span className="custom-check"><Check size={16} /></span><ProductIcon name={item.name} image={item.image} /><span className="grow"><strong>{item.name}</strong><span className="shopping-item-meta"><span>{item.quantity} {item.unit}</span>{item.priceCzk !== undefined ? <><span>{t('shopping.unitPrice', { price: itemMoney(item.priceCzk), unit: item.unit })}</span><span>{t('shopping.totalPrice', { price: itemMoney(item.priceCzk * item.quantity) })}</span></> : <span>{t('shopping.enterPrice')}</span>}{item.addToPantry && <span>{t('shopping.preselected')}</span>}</span></span></label><div className="shopping-item-actions"><button className="icon-btn" type="button" onClick={() => setEditingItem(item)} aria-label={`${t('common.edit')}: ${item.name}`} title={t('common.edit')}><Pencil size={15} /></button><button className="icon-btn delete-item" type="button" onClick={() => removeItem(item)} aria-label={`${t('common.delete')}: ${item.name}`} title={t('common.delete')}><Trash2 size={15} /></button></div></div>)}</div>
       <div className="shopping-summary"><div><span>{t('shopping.spending')}</span><strong>{money(total)}</strong></div><button className="primary" disabled={!checkedItems.length} onClick={openFinish}><CheckCircle2 size={18} />{t('shopping.done')}</button></div>
     </section>
     {finishOpen && <ShoppingFinishDialog items={checkedItems} selected={finishSelection} setSelected={setFinishSelection} close={() => setFinishOpen(false)} confirm={finish} />}
